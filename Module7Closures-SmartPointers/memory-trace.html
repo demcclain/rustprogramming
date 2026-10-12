@@ -1,0 +1,415 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>List Memory Trace</title>
+<meta name="description" content="Step through a small Rust program and see which stack slots and heap bytes each line reads, writes, allocates and frees, colored by owning, shared and mutable access.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Literata:opsz,wght@7..72,400;7..72,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #eef1f2; --panel: #f7f9f9; --ink: #1d252b; --ink-soft: #46535c; --ink-faint: #8b98a3;
+  --line: #d7e0e5; --code-bg: #e2e8eb;
+  --own: #2e7d4f; --ref: #2563a8; --mut: #c25a0c;
+  --own-pale: #dcebe1; --ref-pale: #dce6f3; --mut-pale: #f6e2d5;
+  --brass: #8a7224; --brass-pale: #efe6c4;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14191d; --panel: #1a2126; --ink: #e2e7ea; --ink-soft: #a9b6bf; --ink-faint: #6d7c88;
+    --line: #2a363f; --code-bg: #1f272d;
+    --own: #41a066; --ref: #5d92dc; --mut: #d9773c;
+    --own-pale: #1d3326; --ref-pale: #1c2a3d; --mut-pale: #3a271a;
+    --brass: #d2b65c; --brass-pale: #3a3420;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #14191d; --panel: #1a2126; --ink: #e2e7ea; --ink-soft: #a9b6bf; --ink-faint: #6d7c88;
+  --line: #2a363f; --code-bg: #1f272d;
+  --own: #41a066; --ref: #5d92dc; --mut: #d9773c;
+  --own-pale: #1d3326; --ref-pale: #1c2a3d; --mut-pale: #3a271a;
+  --brass: #d2b65c; --brass-pale: #3a3420;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font-family: "Literata", Charter, Georgia, serif; font-size: 1rem; line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+.mono, code, pre { font-family: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 28px 16px 40px; }
+.theme-btn {
+  position: fixed; top: 12px; right: 12px; z-index: 6; font: inherit; font-size: 0.82rem;
+  color: var(--ink-soft); background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; cursor: pointer;
+}
+button:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+h1 { font-size: 1.9rem; line-height: 1.15; margin: 8px 0 6px; font-weight: 600; }
+.sub { color: var(--ink-soft); margin: 0 0 14px; max-width: 46em; }
+.note { font-size: 0.86rem; color: var(--ink-soft); margin: 0 0 18px; max-width: 60em; }
+
+/* legend */
+.legend { display: flex; flex-wrap: wrap; gap: 8px 22px; align-items: center; margin: 0 0 18px; font-size: 0.9rem; }
+.legend .item { display: inline-flex; align-items: center; gap: 8px; }
+.legend svg { width: 34px; height: 10px; }
+.legend .sep { width: 1px; height: 18px; background: var(--line); }
+.mark { display: inline-block; width: 26px; height: 16px; border-radius: 3px; }
+.mark.r { outline: 2px dashed var(--ink); outline-offset: -2px; }
+.mark.w { background: var(--brass-pale); outline: 2px solid var(--brass); outline-offset: -2px; }
+.mark.f { background: repeating-linear-gradient(135deg, var(--line) 0 4px, transparent 4px 8px); outline: 1.5px dashed var(--ink-faint); outline-offset: -2px; }
+
+/* kinds */
+.k-own { color: var(--own); } .k-ref { color: var(--ref); } .k-mut { color: var(--mut); } .k-val { color: var(--ink-soft); }
+.k-name { font-weight: 600; }
+.c-kw { color: var(--ink-faint); } .c-num { color: var(--ink-soft); }
+
+/* code */
+.demo { margin-top: 6px; }
+pre.code {
+  margin: 0; padding: 12px 0; background: var(--code-bg); border-radius: 8px 8px 0 0;
+  overflow-x: auto; font-size: 0.84rem; line-height: 1.5;
+}
+pre.code .cl { display: block; padding: 0 16px 0 0; border-left: 3px solid transparent; white-space: pre; }
+pre.code .ln { display: inline-block; width: 2.6em; padding-right: 0.9em; text-align: right; color: var(--ink-faint); user-select: none; }
+pre.code .cl.on { background: var(--brass-pale); border-left-color: var(--brass); }
+
+/* memory panel */
+.mem {
+  position: relative; display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 18px 40px;
+  background: var(--panel); border: 1px solid var(--line); border-top: 0; padding: 16px 56px 18px 52px;
+}
+@media (max-width: 860px) { .mem { grid-template-columns: minmax(0, 1fr); padding: 14px 48px 16px 40px; } }
+.col h2 { font-size: 1rem; margin: 0 0 8px; font-weight: 600; }
+.col h2 small { font-weight: 400; color: var(--ink-faint); font-size: 0.8rem; margin-left: 6px; }
+.rows { display: flex; flex-direction: column; gap: 4px; position: relative; }
+.row {
+  display: grid; grid-template-columns: 7.4em 10.2em minmax(0, 1fr) 10.6em; align-items: center; gap: 0 10px;
+  min-height: 30px; padding: 2px 8px; border: 1px solid var(--line); border-left-width: 4px; border-radius: 4px;
+  background: var(--bg); font-size: 0.8rem;
+}
+.row.k-own { border-left-color: var(--own); } .row.k-ref { border-left-color: var(--ref); }
+.row.k-mut { border-left-color: var(--mut); } .row.k-val { border-left-color: var(--ink-faint); }
+.r-addr { font-family: "IBM Plex Mono", ui-monospace, monospace; color: var(--ink-faint); font-size: 0.74rem; }
+.r-addr b, .r-val b, .f-v b, .blk-addr b { color: var(--ink); font-weight: 600; }
+.r-name { font-family: "IBM Plex Mono", ui-monospace, monospace; font-weight: 600; white-space: nowrap; }
+.pill { font-style: normal; font-weight: 500; font-size: 0.7rem; margin-left: 6px; padding: 0 5px; border: 1px solid currentColor; border-radius: 3px; }
+.r-type { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 0.72rem; opacity: 0.85; overflow-wrap: anywhere; }
+.r-val { font-family: "IBM Plex Mono", ui-monospace, monospace; color: var(--ink-soft); padding: 2px 6px; border-radius: 3px; }
+.r-val .hint { display: block; font-size: 0.68rem; color: var(--ink-faint); line-height: 1.2; }
+.r-val .tagx { font-size: 0.68rem; margin-left: 4px; color: var(--ink-faint); font-style: italic; }
+.row.st-empty .r-val { color: var(--ink-faint); font-style: italic; }
+.row.st-empty .r-name, .row.st-empty .r-type { opacity: 0.45; }
+.row.st-moved .r-val .v, .row.st-done .r-val .v { text-decoration: line-through; text-decoration-thickness: 1px; opacity: 0.6; }
+.row.st-done .r-val .v { text-decoration: none; }
+.row.st-done .r-name, .row.st-done .r-type, .row.st-moved .r-name, .row.st-moved .r-type { opacity: 0.6; }
+.row.temp { border-style: dashed; border-left-style: solid; }
+@media (max-width: 560px) {
+  .row { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name val" "addr val" "type type"; padding: 4px 8px; }
+  .r-name { grid-area: name; } .r-addr { grid-area: addr; } .r-type { grid-area: type; } .r-val { grid-area: val; text-align: right; }
+}
+.released .row { opacity: 0.5; background: repeating-linear-gradient(135deg, var(--line) 0 3px, transparent 3px 9px); }
+.released-note { display: none; font-size: 0.8rem; color: var(--ink-soft); font-style: italic; margin-top: 6px; }
+.released .released-note { display: block; }
+
+.blocks { display: flex; flex-direction: column; gap: 14px; }
+.blk { border: 1.5px solid var(--ink-faint); border-radius: 6px; background: var(--bg); padding: 6px 8px 8px; font-size: 0.8rem; }
+.blk-head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; padding: 0 2px 6px; }
+.blk-name { font-weight: 600; }
+.blk-addr { font-family: "IBM Plex Mono", ui-monospace, monospace; color: var(--ink-faint); font-size: 0.74rem; }
+.cells { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--line); border-radius: 3px; }
+.cell { padding: 3px 8px; min-height: 30px; }
+.cell.f-next { grid-column: 1 / -1; border-bottom: 1px solid var(--line); }
+.cell.f-pad { border-left: 1px solid var(--line); }
+.f-v .f-h { font-family: "Literata", Georgia, serif; font-size: 0.7rem; color: var(--ink-faint); margin-left: 8px; }
+.f-l { display: block; font-size: 0.68rem; color: var(--ink-faint); }
+.f-v { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+.cell.f-next { box-shadow: inset 3px 0 0 var(--own); }
+.cell.f-pad { background: repeating-linear-gradient(135deg, var(--line) 0 3px, transparent 3px 7px); }
+.blk.st-none { border-style: dashed; opacity: 0.5; }
+.blk.st-none .cells, .blk.st-none .blk-addr { visibility: hidden; }
+.blk.st-freed { border-style: dashed; background: repeating-linear-gradient(135deg, var(--line) 0 3px, transparent 3px 9px); }
+.blk.st-freed .cells { visibility: hidden; }
+
+/* touches */
+.t-R { outline: 2px dashed var(--ink); outline-offset: 1px; }
+.t-W { background: var(--brass-pale) !important; outline: 2px solid var(--brass); outline-offset: 1px; }
+.blk.t-A { outline: 2.5px solid var(--brass); outline-offset: 3px; }
+.blk.t-F { outline: 2.5px dashed var(--ink-soft); outline-offset: 3px; }
+
+/* wires */
+svg.wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+.w { fill: none; }
+.w-own { stroke: var(--own); stroke-width: 2.6; }
+.w-ref { stroke: var(--ref); stroke-width: 1.7; }
+.w-mut { stroke: var(--mut); stroke-width: 2; stroke-dasharray: 6 4; }
+.m-own { fill: var(--own); } .m-ref { fill: var(--ref); } .m-mut { fill: var(--mut); }
+
+/* step bar */
+.bar {
+  position: sticky; bottom: 0; z-index: 4; background: var(--panel); border: 1px solid var(--line); border-top: 2px solid var(--brass);
+  border-radius: 0 0 8px 8px; padding: 10px 16px 12px; box-shadow: 0 -6px 16px -12px rgba(0, 0, 0, 0.35);
+}
+.bar-top { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+.count { font-size: 0.82rem; color: var(--ink-soft); font-variant-numeric: tabular-nums; flex: none; }
+.now { font-size: 0.8rem; white-space: pre; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.cap { margin: 6px 0 8px; font-size: 0.95rem; min-height: 3.1em; }
+.cap code { font-size: 0.85em; background: var(--code-bg); padding: 0 4px; border-radius: 3px; }
+.ledger { display: flex; flex-wrap: wrap; gap: 6px; min-height: 28px; margin-bottom: 10px; }
+.chip { font-size: 0.78rem; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); background: var(--bg); white-space: nowrap; }
+.chip .op { font-weight: 600; margin-right: 4px; }
+.chip small { color: var(--ink-faint); margin-left: 4px; }
+.chip.R { border: 1.5px dashed var(--ink); }
+.chip.W { background: var(--brass-pale); border: 1.5px solid var(--brass); }
+.chip.A { border: 1.5px solid var(--brass); }
+.chip.F { border: 1.5px dashed var(--ink-soft); }
+.chip .seq { color: var(--ink-faint); margin-right: 4px; font-variant-numeric: tabular-nums; }
+.btns { display: flex; gap: 8px; align-items: center; }
+.btns button { font: inherit; font-size: 0.9rem; padding: 4px 16px; border: 1px solid var(--ink-soft); border-radius: 999px; background: transparent; color: var(--ink); cursor: pointer; }
+.btns button.primary { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.btns button:disabled { opacity: 0.4; cursor: default; }
+.btns .keys { margin-left: auto; font-size: 0.78rem; color: var(--ink-faint); }
+@media (max-width: 560px) {
+  .btns .keys { display: none; }
+  .bar { padding: 8px 12px 10px; }
+  .cap { font-size: 0.88rem; min-height: 0; margin: 4px 0 6px; }
+  .ledger { flex-wrap: nowrap; overflow-x: auto; margin-bottom: 8px; padding-bottom: 2px; }
+  .btns button { padding: 3px 14px; }
+}
+</style>
+</head>
+<body>
+<button class="theme-btn" type="button" id="themeBtn">Dark</button>
+<div class="wrap">
+<h1>Memory trace</h1>
+<p class="sub">One small program, stepped line by line. Below the code: every stack slot of <code>main</code> and every heap block, with what each line reads, writes, allocates and frees.</p>
+
+<div class="legend" aria-label="Legend">
+<span class="item"><svg viewBox="0 0 34 10" aria-hidden="true"><line x1="1" y1="5" x2="33" y2="5" class="w w-own"/></svg><span class="k-own k-name">owns</span></span>
+<span class="item"><svg viewBox="0 0 34 10" aria-hidden="true"><line x1="1" y1="5" x2="33" y2="5" class="w w-ref"/></svg><span class="k-ref k-name">&amp; shared reference</span></span>
+<span class="item"><svg viewBox="0 0 34 10" aria-hidden="true"><line x1="1" y1="5" x2="33" y2="5" class="w w-mut"/></svg><span class="k-mut k-name">&amp;mut mutable reference</span></span>
+<span class="item"><span class="k-val k-name">i32</span> plain value</span>
+<span class="sep" aria-hidden="true"></span>
+<span class="item"><span class="mark r"></span>read</span>
+<span class="item"><span class="mark w"></span>write</span>
+<span class="item"><span class="mark f"></span>freed</span>
+</div>
+
+<p class="note">Addresses were read with a debugger (gdb) from one run of this exact program: debug build, x86-64 Linux. They change on every run. The reads and writes listed are what each line does in Rust's terms; an optimized build may skip or merge some of them. Node fields are drawn in the order the compiler stored them.</p>
+
+<section class="demo" aria-label="Step-through trace">
+<pre class="code" id="code"><code><span class="cl" data-l="1"><span class="ln">1</span><span class="c-kw">fn</span> main() {</span><span class="cl" data-l="2"><span class="ln">2</span>    <span class="c-kw">let</span> <span class="k-own k-name">n3</span> = <span class="k-own">Box::new</span>(ListNode::new(<span class="c-num">3</span>));</span><span class="cl" data-l="3"><span class="ln">3</span>    <span class="c-kw">let</span> <span class="k-own k-name">n2</span> = <span class="k-own">Box::new</span>(ListNode { val: <span class="c-num">2</span>, next: Some(<span class="k-own k-name">n3</span>) });</span><span class="cl" data-l="4"><span class="ln">4</span>    <span class="c-kw">let</span> <span class="c-kw">mut</span> <span class="k-own k-name">head</span> = Some(<span class="k-own">Box::new</span>(ListNode { val: <span class="c-num">1</span>, next: Some(<span class="k-own k-name">n2</span>) }));</span><span class="cl" data-l="5"><span class="ln">5</span> </span><span class="cl" data-l="6"><span class="ln">6</span>    <span class="c-kw">let</span> <span class="k-ref k-name">hook</span>: <span class="k-ref k-type">&amp;Option&lt;Box&lt;ListNode&gt;&gt;</span> = <span class="k-ref">&amp;</span><span class="k-own k-name">head</span>;</span><span class="cl" data-l="7"><span class="ln">7</span>    <span class="c-kw">let</span> <span class="k-val k-name">a</span> = <span class="k-ref k-name">hook</span><span class="k-ref">.as_ref()</span>.unwrap().val;</span><span class="cl" data-l="8"><span class="ln">8</span> </span><span class="cl" data-l="9"><span class="ln">9</span>    <span class="c-kw">let</span> <span class="k-ref k-name">key</span>: <span class="k-ref k-type">Option&lt;&amp;Box&lt;ListNode&gt;&gt;</span> = <span class="k-own k-name">head</span><span class="k-ref">.as_ref()</span>;</span><span class="cl" data-l="10"><span class="ln">10</span>    <span class="c-kw">let</span> <span class="k-val k-name">b</span> = <span class="k-ref k-name">key</span>.unwrap().val;</span><span class="cl" data-l="11"><span class="ln">11</span> </span><span class="cl" data-l="12"><span class="ln">12</span>    <span class="c-kw">let</span> <span class="k-ref k-name">node</span>: <span class="k-ref k-type">Option&lt;&amp;ListNode&gt;</span> = <span class="k-own k-name">head</span><span class="k-ref">.as_deref()</span>;</span><span class="cl" data-l="13"><span class="ln">13</span>    <span class="c-kw">let</span> <span class="k-val k-name">c</span> = <span class="k-ref k-name">node</span>.unwrap().val;</span><span class="cl" data-l="14"><span class="ln">14</span> </span><span class="cl" data-l="15"><span class="ln">15</span>    <span class="c-kw">let</span> <span class="k-ref k-name">next_hook</span>: <span class="k-ref k-type">&amp;Option&lt;Box&lt;ListNode&gt;&gt;</span> = <span class="k-ref">&amp;</span><span class="k-ref k-name">node</span>.unwrap().next;</span><span class="cl" data-l="16"><span class="ln">16</span>    <span class="c-kw">let</span> <span class="k-val k-name">d</span> = <span class="k-ref k-name">next_hook</span><span class="k-ref">.as_deref()</span>.unwrap().val;</span><span class="cl" data-l="17"><span class="ln">17</span> </span><span class="cl" data-l="18"><span class="ln">18</span>    <span class="c-kw">let</span> <span class="k-mut k-name">first</span>: <span class="k-mut k-type">&amp;mut ListNode</span> = <span class="k-own k-name">head</span><span class="k-mut">.as_deref_mut()</span>.unwrap();</span><span class="cl" data-l="19"><span class="ln">19</span>    <span class="c-kw">let</span> <span class="k-mut k-name">second</span>: <span class="k-mut k-type">&amp;mut ListNode</span> = <span class="k-mut k-name">first</span>.next<span class="k-mut">.as_deref_mut()</span>.unwrap();</span><span class="cl" data-l="20"><span class="ln">20</span>    <span class="k-mut k-name">second</span>.val = <span class="c-num">20</span>;</span><span class="cl" data-l="21"><span class="ln">21</span> </span><span class="cl" data-l="22"><span class="ln">22</span>    <span class="c-kw">let</span> <span class="k-mut k-name">hook_mut</span>: <span class="k-mut k-type">&amp;mut Option&lt;Box&lt;ListNode&gt;&gt;</span> = <span class="k-mut">&amp;mut</span> <span class="k-own k-name">head</span><span class="k-mut">.as_mut()</span>.unwrap().next;</span><span class="cl" data-l="23"><span class="ln">23</span>    *<span class="k-mut k-name">hook_mut</span> = <span class="k-mut k-name">hook_mut</span><span class="k-own">.take()</span>.unwrap().next;</span><span class="cl" data-l="24"><span class="ln">24</span>}</span></code></pre>
+<div class="mem" id="mem">
+  <div class="col" id="stackCol">
+    <h2>Stack <small>frame of main, addresses rising downward</small></h2>
+    <div class="rows" id="stack"></div>
+    <div class="released-note">Frame popped. The bytes are still there; nothing owns them now.</div>
+  </div>
+  <div class="col">
+    <h2>Heap <small>16-byte blocks from the allocator</small></h2>
+    <div class="blocks" id="heap"></div>
+  </div>
+  <svg class="wires" id="wires" aria-hidden="true">
+    <defs>
+      <marker id="mk-own" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="m-own"/></marker>
+      <marker id="mk-ref" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="m-ref"/></marker>
+      <marker id="mk-mut" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="m-mut"/></marker>
+    </defs>
+    <g id="wireG"></g>
+  </svg>
+</div>
+<div class="bar" id="bar">
+  <div class="bar-top"><span class="count" id="count"></span><code class="now" id="now"></code></div>
+  <p class="cap" id="cap" aria-live="polite"></p>
+  <div class="ledger" id="ledger"></div>
+  <div class="btns">
+    <button type="button" id="back">Back</button>
+    <button type="button" class="primary" id="step">Step</button>
+    <button type="button" id="reset">Start over</button>
+    <span class="keys">Arrow keys step too</span>
+  </div>
+</div>
+</section>
+</div>
+
+<script>
+var DATA = {"slots": [{"id": "head", "type": "Option<Box<ListNode>>", "kind": "own", "addr": "0x7ffc404f1488", "size": 8}, {"id": "n3", "type": "Box<ListNode>", "kind": "own", "addr": "0x7ffc404f1498", "size": 8}, {"id": "n2", "type": "Box<ListNode>", "kind": "own", "addr": "0x7ffc404f14a0", "size": 8}, {"id": "hook", "type": "&Option<Box<ListNode>>", "kind": "ref", "addr": "0x7ffc404f14a8", "size": 8}, {"id": "a", "type": "i32", "kind": "val", "addr": "0x7ffc404f14c4", "size": 4}, {"id": "key", "type": "Option<&Box<ListNode>>", "kind": "ref", "addr": "0x7ffc404f14c8", "size": 8}, {"id": "b", "type": "i32", "kind": "val", "addr": "0x7ffc404f14d4", "size": 4}, {"id": "node", "type": "Option<&ListNode>", "kind": "ref", "addr": "0x7ffc404f14d8", "size": 8}, {"id": "c", "type": "i32", "kind": "val", "addr": "0x7ffc404f14e4", "size": 4}, {"id": "next_hook", "type": "&Option<Box<ListNode>>", "kind": "ref", "addr": "0x7ffc404f14e8", "size": 8}, {"id": "d", "type": "i32", "kind": "val", "addr": "0x7ffc404f14f4", "size": 4}, {"id": "first", "type": "&mut ListNode", "kind": "mut", "addr": "0x7ffc404f14f8", "size": 8}, {"id": "second", "type": "&mut ListNode", "kind": "mut", "addr": "0x7ffc404f1500", "size": 8}, {"id": "hook_mut", "type": "&mut Option<Box<ListNode>>", "kind": "mut", "addr": "0x7ffc404f1508", "size": 8}], "blocks": [{"id": "N3", "name": "node 3", "addr": "0x557d14fead60"}, {"id": "N2", "name": "node 2", "addr": "0x557d14fead80"}, {"id": "N1", "name": "node 1", "addr": "0x557d14feada0"}], "frames": [{"line": 1, "cap": "Entering <code>main</code> reserves a stack slot for every local at once. None of them hold anything meaningful yet.", "ops": [], "touch": []}, {"line": 2, "cap": "<code>Box::new</code> gets 16 bytes from the allocator and writes node 3 into them. The slot <code>n3</code> receives the address.", "ops": [{"op": "alloc", "b": "N3", "next": null, "val": 3}, {"op": "set", "s": "n3", "ptr": "block:N3"}], "touch": [["A", "block:N3"], ["W", "next:N3"], ["W", "val:N3"], ["W", "slot:n3"]]}, {"line": 3, "cap": "Moving <code>n3</code> copies its 8 bytes into node 2's <code>next</code>. The slot <code>n3</code> still holds the same bits (the debugger saw them), but nothing reads it again.", "ops": [{"op": "alloc", "b": "N2", "next": "N3", "val": 2}, {"op": "moved", "s": "n3"}, {"op": "set", "s": "n2", "ptr": "block:N2"}], "touch": [["R", "slot:n3"], ["A", "block:N2"], ["W", "next:N2"], ["W", "val:N2"], ["W", "slot:n2"]]}, {"line": 4, "cap": "Same again for node 1. Now <code>head</code> owns node 1, node 1 owns node 2, node 2 owns node 3.", "ops": [{"op": "alloc", "b": "N1", "next": "N2", "val": 1}, {"op": "moved", "s": "n2"}, {"op": "set", "s": "head", "ptr": "block:N1"}], "touch": [["R", "slot:n2"], ["A", "block:N1"], ["W", "next:N1"], ["W", "val:N1"], ["W", "slot:head"]]}, {"line": 6, "cap": "<code>&amp;head</code> is the address of <code>head</code>'s slot, a stack address. Making it reads nothing.", "ops": [{"op": "set", "s": "hook", "ptr": "slot:head"}], "touch": [["W", "slot:hook"]]}, {"line": 7, "cap": "Three reads: <code>hook</code> leads to the slot <code>head</code>, <code>head</code> leads to node 1, node 1 gives the value.", "ops": [{"op": "set", "s": "a", "val": 1}], "touch": [["R", "slot:hook"], ["R", "slot:head"], ["R", "val:N1"], ["W", "slot:a"]]}, {"line": 9, "cap": "<code>key</code> holds exactly the same 8 bytes as <code>hook</code>. Different type, same address. <code>as_ref</code> reads <code>head</code> once to check it isn't <code>None</code>.", "ops": [{"op": "set", "s": "key", "ptr": "slot:head"}], "touch": [["R", "slot:head"], ["W", "slot:key"]]}, {"line": 10, "cap": "So reading through <code>key</code> costs the same three reads.", "ops": [{"op": "set", "s": "b", "val": 1}], "touch": [["R", "slot:key"], ["R", "slot:head"], ["R", "val:N1"], ["W", "slot:b"]]}, {"line": 12, "cap": "<code>as_deref</code> follows <code>head</code> one step. <code>node</code> holds a heap address: the node itself, not the slot.", "ops": [{"op": "set", "s": "node", "ptr": "block:N1"}], "touch": [["R", "slot:head"], ["W", "slot:node"]]}, {"line": 13, "cap": "Two reads instead of three.", "ops": [{"op": "set", "s": "c", "val": 1}], "touch": [["R", "slot:node"], ["R", "val:N1"], ["W", "slot:c"]]}, {"line": 15, "cap": "A stack variable pointing at a hook that lives on the heap, inside node 1. The compiler put <code>next</code> at the start of the node, so this address equals node 1's.", "ops": [{"op": "set", "s": "next_hook", "ptr": "next:N1"}], "touch": [["R", "slot:node"], ["W", "slot:next_hook"]]}, {"line": 16, "cap": "The hook inside node 1 leads to node 2, and node 2 gives 2.", "ops": [{"op": "set", "s": "d", "val": 2}], "touch": [["R", "slot:next_hook"], ["R", "next:N1"], ["R", "val:N2"], ["W", "slot:d"]]}, {"line": 18, "cap": "The four shared references are finished (none is used again), so a changing reference into the list is allowed. Their slots still hold addresses; nothing reads them.", "ops": [{"op": "done", "s": "hook"}, {"op": "done", "s": "key"}, {"op": "done", "s": "node"}, {"op": "done", "s": "next_hook"}, {"op": "set", "s": "first", "ptr": "block:N1"}], "touch": [["R", "slot:head"], ["W", "slot:first"]]}, {"line": 19, "cap": "<code>second</code> points straight at node 2 on the heap.", "ops": [{"op": "set", "s": "second", "ptr": "block:N2"}], "touch": [["R", "slot:first"], ["R", "next:N1"], ["W", "slot:second"]]}, {"line": 20, "cap": "One write, on the heap. No stack slot changes. The list now reads 1, 20, 3.", "ops": [{"op": "done", "s": "first"}, {"op": "field", "b": "N2", "val": 20}], "touch": [["R", "slot:second"], ["W", "val:N2"]]}, {"line": 22, "cap": "<code>hook_mut</code> points at the hook inside node 1, with permission to change it.", "ops": [{"op": "done", "s": "second"}, {"op": "set", "s": "hook_mut", "ptr": "next:N1"}], "touch": [["R", "slot:head"], ["W", "slot:hook_mut"]]}, {"line": 23, "cap": "<code>take()</code> copies node 2's address out of the hook into an unnamed temporary and writes <code>None</code> (all zero bits) into the hook. The debugger caught node 1's <code>next</code> at 0x0 right here.", "ops": [{"op": "temp", "ptr": "block:N2"}, {"op": "field", "b": "N1", "next": null}], "touch": [["R", "slot:hook_mut"], ["R", "next:N1"], ["W", "temp"], ["W", "next:N1"]]}, {"line": 23, "cap": "Node 2's <code>next</code> is copied into node 1's hook. The temporary was node 2's last owner, so its 16 bytes go back to the allocator.", "ops": [{"op": "field", "b": "N1", "next": "N3"}, {"op": "untemp"}, {"op": "free", "b": "N2"}], "touch": [["R", "temp"], ["R", "next:N2"], ["W", "next:N1"], ["F", "block:N2"]]}, {"line": 24, "cap": "Leaving <code>main</code> drops <code>head</code>. Node 1's fields are dropped first, so node 3 is freed before node 1.", "ops": [{"op": "done", "s": "hook_mut"}, {"op": "free", "b": "N3"}], "touch": [["R", "slot:head"], ["R", "next:N1"], ["F", "block:N3"]]}, {"line": 24, "cap": "Then node 1. Popping the frame only moves the stack pointer back; the slots are not wiped.", "ops": [{"op": "free", "b": "N1"}, {"op": "release"}], "touch": [["F", "block:N1"]]}]};
+(function () {
+  var root = document.documentElement, tb = document.getElementById("themeBtn");
+  function isDark() { var t = root.getAttribute("data-theme"); return t ? t === "dark" : (window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches); }
+  function lab() { tb.textContent = isDark() ? "Light" : "Dark"; }
+  try { var sv = localStorage.getItem("trace-theme"); if (sv === "light" || sv === "dark") root.setAttribute("data-theme", sv); } catch (e) {}
+  lab();
+  tb.addEventListener("click", function () { var n = isDark() ? "light" : "dark"; root.setAttribute("data-theme", n); try { localStorage.setItem("trace-theme", n); } catch (e) {} lab(); draw(); });
+
+  var SLOT = {}, BLK = {};
+  DATA.slots.forEach(function (s) { SLOT[s.id] = s; });
+  DATA.blocks.forEach(function (b) { BLK[b.id] = b; });
+  var PILL = { own: "owns", ref: "&amp;", mut: "&amp;mut", val: "i32" };
+
+  function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+  function fmt(a) { return esc(a.slice(0, -4)) + "<b>" + esc(a.slice(-4)) + "</b>"; }
+  function addrOf(t) {
+    var p = t.split(":");
+    if (p[0] === "slot") return SLOT[p[1]].addr;
+    return BLK[p[1]].addr; // block, or its next field: next sits at offset 0
+  }
+  function hintOf(t) {
+    var p = t.split(":");
+    if (p[0] === "slot") return p[1] + "'s slot";
+    if (p[0] === "block") return BLK[p[1]].name;
+    return BLK[p[1]].name + " .next";
+  }
+
+  function stateAt(k) {
+    var S = { slots: {}, blocks: {}, temp: null, released: false };
+    DATA.slots.forEach(function (s) { S.slots[s.id] = { st: "empty" }; });
+    DATA.blocks.forEach(function (b) { S.blocks[b.id] = { st: "none", next: null, val: null }; });
+    for (var i = 0; i <= k; i++) DATA.frames[i].ops.forEach(function (o) {
+      if (o.op === "alloc") S.blocks[o.b] = { st: "live", next: o.next, val: o.val };
+      else if (o.op === "set") S.slots[o.s] = { st: "set", ptr: o.ptr, val: o.val };
+      else if (o.op === "moved") S.slots[o.s].st = "moved";
+      else if (o.op === "done") S.slots[o.s].st = "done";
+      else if (o.op === "field") { if ("next" in o) S.blocks[o.b].next = o.next; if ("val" in o) S.blocks[o.b].val = o.val; }
+      else if (o.op === "free") S.blocks[o.b].st = "freed";
+      else if (o.op === "temp") S.temp = { ptr: o.ptr };
+      else if (o.op === "untemp") S.temp = null;
+      else if (o.op === "release") S.released = true;
+    });
+    return S;
+  }
+
+  function valHTML(slot, v) {
+    if (v.st === "empty") return "not set";
+    var inner, hint = "";
+    if (v.ptr) { inner = fmt(addrOf(v.ptr)); hint = '<span class="hint">' + esc(hintOf(v.ptr)) + "</span>"; }
+    else inner = esc(v.val);
+    var tag = v.st === "moved" ? '<span class="tagx">moved</span>' : v.st === "done" ? '<span class="tagx">done</span>' : "";
+    return '<span class="v">' + inner + "</span>" + tag + hint;
+  }
+  function rowHTML(s, v, extraCls) {
+    return '<div class="row k-' + s.kind + " st-" + v.st + (extraCls || "") + '" data-row="' + s.key + '">' +
+      '<span class="r-addr">' + (s.addr ? fmt(s.addr) : "unnamed") + "</span>" +
+      '<span class="r-name k-' + s.kind + '">' + esc(s.name) + '<i class="pill">' + PILL[s.kind] + "</i></span>" +
+      '<span class="r-type k-' + s.kind + '">' + esc(s.type) + "</span>" +
+      '<span class="r-val" data-t="' + s.key + '">' + valHTML(s, v) + "</span></div>";
+  }
+  function blkHTML(b, v) {
+    var next = v.next ? fmt(BLK[v.next].addr) + '<span class="f-h">' + esc(BLK[v.next].name) + "</span>" : 'None<span class="f-h">0x0</span>';
+    var head = v.st === "freed" ? "freed" : v.st === "none" ? "not allocated yet" : fmt(b.addr);
+    return '<div class="blk st-' + v.st + '" data-t="block:' + b.id + '">' +
+      '<div class="blk-head"><span class="blk-name">' + esc(b.name) + '</span><span class="blk-addr">' + head + "</span></div>" +
+      '<div class="cells"><div class="cell f-next" data-t="next:' + b.id + '"><span class="f-l">next, 8 B, owns what it points at</span><span class="f-v">' + next + "</span></div>" +
+      '<div class="cell f-val" data-t="val:' + b.id + '"><span class="f-l">val, 4 B</span><span class="f-v">' + esc(v.val === null ? "" : v.val) + "</span></div>" +
+      '<div class="cell f-pad" title="4 bytes of padding"><span class="f-l">padding, 4 B</span></div></div></div>';
+  }
+
+  var codeLines = Array.prototype.slice.call(document.querySelectorAll("#code .cl"));
+  var stackEl = document.getElementById("stack"), heapEl = document.getElementById("heap"), stackCol = document.getElementById("stackCol");
+  var memEl = document.getElementById("mem"), wireG = document.getElementById("wireG");
+  var capEl = document.getElementById("cap"), ledEl = document.getElementById("ledger"), countEl = document.getElementById("count"), nowEl = document.getElementById("now");
+  var backB = document.getElementById("back"), stepB = document.getElementById("step"), resetB = document.getElementById("reset");
+  var k = 0, cur = null;
+
+  function describe(t) {
+    if (t === "temp") return "temporary<small>stack, 8 B</small>";
+    var p = t.split(":");
+    if (p[0] === "slot") return "<b>" + esc(p[1]) + "</b><small>stack, " + SLOT[p[1]].size + " B</small>";
+    var nm = esc(BLK[p[1]].name);
+    if (p[0] === "next") return nm + " .next<small>heap, 8 B</small>";
+    if (p[0] === "val") return nm + " .val<small>heap, 4 B</small>";
+    return nm + "<small>heap, 16 B</small>";
+  }
+  var OPW = { R: "read", W: "write", A: "allocate", F: "free" };
+
+  function draw() {
+    var f = DATA.frames[k], S = stateAt(k);
+    cur = S;
+    codeLines.forEach(function (el) { el.classList.toggle("on", Number(el.getAttribute("data-l")) === f.line); });
+    var lineEl = codeLines[f.line - 1];
+    nowEl.textContent = lineEl ? lineEl.textContent.replace(/^\s*\d+/, "").trim() : "";
+    var h = "";
+    DATA.slots.forEach(function (s) { h += rowHTML({ key: "slot:" + s.id, name: s.id, kind: s.kind, type: s.type, addr: s.addr }, S.slots[s.id]); });
+    if (S.temp) h += rowHTML({ key: "temp", name: "(temporary)", kind: "own", type: "Box<ListNode>", addr: "" }, { st: "set", ptr: S.temp.ptr }, " temp");
+    stackEl.innerHTML = h;
+    stackCol.classList.toggle("released", S.released);
+    heapEl.innerHTML = DATA.blocks.map(function (b) { return blkHTML(b, S.blocks[b.id]); }).join("");
+    f.touch.forEach(function (t) {
+      var el = memEl.querySelector('[data-t="' + t[1] + '"]');
+      if (el) el.classList.add("t-" + t[0]);
+    });
+    capEl.innerHTML = f.cap;
+    ledEl.innerHTML = f.touch.map(function (t, i) {
+      return '<span class="chip ' + t[0] + '"><span class="seq">' + (i + 1) + '</span><span class="op">' + OPW[t[0]] + "</span>" + describe(t[1]) + "</span>";
+    }).join("") || '<span class="chip"><span class="op">no memory touched</span></span>';
+    countEl.textContent = "Step " + (k + 1) + " of " + DATA.frames.length;
+    backB.disabled = k === 0;
+    stepB.disabled = k === DATA.frames.length - 1;
+    requestAnimationFrame(wires);
+  }
+
+  function box(el) {
+    var r = el.getBoundingClientRect(), m = memEl.getBoundingClientRect();
+    return { l: r.left - m.left, r: r.right - m.left, t: r.top - m.top, b: r.bottom - m.top, cy: (r.top + r.bottom) / 2 - m.top };
+  }
+  function targetEl(t) {
+    var p = t.split(":");
+    if (p[0] === "slot") return memEl.querySelector('[data-row="' + t + '"]');
+    if (p[0] === "block") return memEl.querySelector('[data-t="' + t + '"] .blk-head');
+    return memEl.querySelector('[data-t="' + t + '"]');
+  }
+  function path(d, kind) {
+    return '<path class="w w-' + kind + '" d="' + d + '" marker-end="url(#mk-' + kind + ')"/>';
+  }
+  function wires() {
+    if (!cur) return;
+    var out = [], loopL = 0, loopR = 0, arrive = {};
+    function nudge(t) { arrive[t] = (arrive[t] || 0) + 1; return (arrive[t] - 1) * 6; }
+    function link(srcEl, rowEl, t, kind) {
+      var dEl = targetEl(t); if (!srcEl || !dEl) return;
+      var s = box(srcEl), d = box(dEl), dy = nudge(t);
+      if (t.indexOf("slot:") === 0) {
+        var sr = box(rowEl), x0 = sr.l - 3, y0 = sr.cy, x1 = d.l - 3, y1 = d.cy + dy - 3, off = 26 + 9 * loopL++;
+        out.push(path("M" + x0 + "," + y0 + " C" + (x0 - off) + "," + y0 + " " + (x1 - off) + "," + y1 + " " + x1 + "," + y1, kind));
+      } else if (d.l > s.r + 12) {
+        var ex = d.l - 2, ey = d.cy + dy - 3, mx = (s.r + ex) / 2;
+        out.push(path("M" + (s.r + 2) + "," + s.cy + " C" + mx + "," + s.cy + " " + mx + "," + ey + " " + ex + "," + ey, kind));
+      } else {
+        var rx = Math.max(s.r, d.r) + 22 + 9 * loopR++, ey2 = d.cy + dy - 3;
+        out.push(path("M" + (s.r + 2) + "," + s.cy + " C" + rx + "," + s.cy + " " + rx + "," + ey2 + " " + (d.r + 2) + "," + ey2, kind));
+      }
+    }
+    DATA.slots.forEach(function (s) {
+      var v = cur.slots[s.id];
+      if (v.st === "set" && v.ptr && !cur.released) {
+        var row = memEl.querySelector('[data-row="slot:' + s.id + '"]');
+        link(row.querySelector(".r-val"), row, v.ptr, s.kind);
+      }
+    });
+    if (cur.temp) { var trow = memEl.querySelector('[data-row="temp"]'); link(trow.querySelector(".r-val"), trow, cur.temp.ptr, "own"); }
+    DATA.blocks.forEach(function (b) {
+      var v = cur.blocks[b.id];
+      if (v.st === "live" && v.next) link(memEl.querySelector('[data-t="next:' + b.id + '"]'), null, "block:" + v.next, "own");
+    });
+    wireG.innerHTML = out.join("");
+  }
+
+  backB.addEventListener("click", function () { if (k > 0) { k--; draw(); } });
+  stepB.addEventListener("click", function () { if (k < DATA.frames.length - 1) { k++; draw(); } });
+  resetB.addEventListener("click", function () { k = 0; draw(); });
+  document.addEventListener("keydown", function (e) {
+    if (e.target && /input|textarea|select/i.test(e.target.tagName)) return;
+    if (e.key === "ArrowRight") { stepB.click(); e.preventDefault(); }
+    else if (e.key === "ArrowLeft") { backB.click(); e.preventDefault(); }
+    else if (e.key === "Home") { resetB.click(); e.preventDefault(); }
+  });
+  var rt; window.addEventListener("resize", function () { clearTimeout(rt); rt = setTimeout(wires, 80); });
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(wires);
+  draw();
+})();
+</script>
+</body>
+</html>

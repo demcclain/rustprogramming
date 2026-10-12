@@ -1,0 +1,451 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Compiler Fills In</title>
+<meta name="description" content="A small Rust list filter shown twice, as written and with every step the compiler inserts spelled out, traced line by line through the stack and the heap.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Literata:opsz,wght@7..72,400;7..72,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #eef1f2; --panel: #f7f9f9; --ink: #1d252b; --ink-soft: #46535c; --ink-faint: #8b98a3;
+  --line: #d7e0e5; --code-bg: #e2e8eb; --cur-bg: rgba(29, 37, 43, 0.09); --w-bg: rgba(29, 37, 43, 0.10);
+  --own: #2e7d4f; --ref: #2563a8; --mut: #c25a0c;
+  --i-borrow: #0a87a0; --i-deref: #8048c8; --i-move: #b07800; --i-drop: #cc2f4a; --i-gray: #6b7882;
+  --i-borrow-bg: #d3eef3; --i-deref-bg: #ebe0f8; --i-move-bg: #f6e7c0; --i-drop-bg: #f8dade; --i-gray-bg: #dde3e7;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14191d; --panel: #1a2126; --ink: #e2e7ea; --ink-soft: #a9b6bf; --ink-faint: #6d7c88;
+    --line: #2a363f; --code-bg: #1f272d; --cur-bg: rgba(226, 231, 234, 0.08); --w-bg: rgba(226, 231, 234, 0.12);
+    --own: #41a066; --ref: #5d92dc; --mut: #d9773c;
+    --i-borrow: #2f9fb3; --i-deref: #9a78e0; --i-move: #b88a28; --i-drop: #d9627a; --i-gray: #8d9aa4;
+    --i-borrow-bg: #12333a; --i-deref-bg: #2a2140; --i-move-bg: #382d14; --i-drop-bg: #3b1d25; --i-gray-bg: #2a333a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #14191d; --panel: #1a2126; --ink: #e2e7ea; --ink-soft: #a9b6bf; --ink-faint: #6d7c88;
+  --line: #2a363f; --code-bg: #1f272d; --cur-bg: rgba(226, 231, 234, 0.08); --w-bg: rgba(226, 231, 234, 0.12);
+  --own: #41a066; --ref: #5d92dc; --mut: #d9773c;
+  --i-borrow: #2f9fb3; --i-deref: #9a78e0; --i-move: #b88a28; --i-drop: #d9627a; --i-gray: #8d9aa4;
+  --i-borrow-bg: #12333a; --i-deref-bg: #2a2140; --i-move-bg: #382d14; --i-drop-bg: #3b1d25; --i-gray-bg: #2a333a;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: "Literata", Charter, Georgia, serif; font-size: 1rem; line-height: 1.6; -webkit-font-smoothing: antialiased; }
+code, pre, .mono { font-family: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 28px 16px 40px; }
+.theme-btn { position: fixed; top: 12px; right: 12px; z-index: 6; font: inherit; font-size: 0.82rem; color: var(--ink-soft); background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; cursor: pointer; }
+button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+h1 { font-size: 1.9rem; line-height: 1.15; margin: 8px 0 6px; font-weight: 600; }
+.sub { color: var(--ink-soft); margin: 0 0 16px; max-width: 46em; }
+.note { font-size: 0.85rem; color: var(--ink-soft); margin: 4px 0 20px; max-width: 62em; }
+
+/* legend */
+.legend { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; align-items: center; margin: 0 0 8px; font-size: 0.88rem; }
+.legend .lh { color: var(--ink-soft); font-size: 0.82rem; }
+.legend .row-items { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center; }
+.legend .item { display: inline-flex; align-items: center; gap: 7px; }
+.legend svg { width: 32px; height: 10px; }
+@media (max-width: 640px) { .legend { grid-template-columns: 1fr; } .legend .lh { margin-top: 6px; } }
+.mark { display: inline-block; width: 24px; height: 15px; border-radius: 3px; }
+.mark.r { outline: 2px dashed var(--ink); outline-offset: -2px; }
+.mark.w { background: var(--w-bg); outline: 2px solid var(--ink); outline-offset: -2px; }
+.mark.b { outline: 2px dotted var(--ink-soft); outline-offset: -2px; }
+.mark.f { background: repeating-linear-gradient(135deg, var(--line) 0 4px, transparent 4px 8px); outline: 1.5px dashed var(--ink-faint); outline-offset: -2px; }
+
+/* ownership kinds (text color) */
+.k-own { color: var(--own); } .k-ref { color: var(--ref); } .k-mut { color: var(--mut); } .k-val { color: var(--ink-soft); }
+.k-name { font-weight: 600; }
+.c-kw { color: var(--ink-faint); } .c-num { color: var(--ink-soft); }
+
+/* inserted pieces: ghost chips in the explicit code */
+.g { border-radius: 3px; padding: 0 2px; color: var(--ink); background: var(--x-bg); box-shadow: inset 0 -2px 0 var(--x); font-weight: 500; }
+.g-borrow { --x: var(--i-borrow); --x-bg: var(--i-borrow-bg); }
+.g-deref { --x: var(--i-deref); --x-bg: var(--i-deref-bg); }
+.g-move { --x: var(--i-move); --x-bg: var(--i-move-bg); font-style: italic; font-family: "Literata", Georgia, serif; font-size: 0.92em; }
+.g-copy { --x: var(--i-move); background: transparent; box-shadow: none; outline: 1.5px solid var(--i-move); outline-offset: -1px; font-style: italic; font-family: "Literata", Georgia, serif; font-size: 0.92em; }
+.g-drop { --x: var(--i-drop); --x-bg: var(--i-drop-bg); font-style: italic; }
+.g-type { --x: var(--i-gray); --x-bg: var(--i-gray-bg); font-weight: 400; }
+.g-path { background: transparent; box-shadow: none; outline: 1.5px dashed var(--i-gray); outline-offset: -1px; font-weight: 400; }
+/* inserted spots in the written code: stacked underlines */
+.umark { cursor: help; }
+.u { border-bottom: 2.5px solid var(--x); }
+.u.ud1 { padding-bottom: 1px; } .u.ud2 { padding-bottom: 4.5px; } .u.ud3 { padding-bottom: 8px; }
+.u-borrow { --x: var(--i-borrow); } .u-deref { --x: var(--i-deref); } .u-move { --x: var(--i-move); }
+.u-copy { --x: var(--i-move); border-bottom-style: dashed; } .u-drop { --x: var(--i-drop); }
+.u-type { --x: var(--i-gray); } .u-path { --x: var(--i-gray); border-bottom-style: dashed; }
+.lg { padding: 0 5px; }
+
+/* code blocks */
+.codehead { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin: 18px 0 0; padding: 8px 14px; background: var(--code-bg); border-radius: 8px 8px 0 0; border-bottom: 1px solid var(--line); font-size: 0.9rem; font-weight: 600; }
+.codehead small { font-weight: 400; color: var(--ink-faint); font-size: 0.8rem; }
+pre.code { margin: 0; padding: 10px 0 12px; background: var(--code-bg); overflow-x: auto; font-size: 0.82rem; line-height: 1.75; }
+pre.code.w { border-radius: 0 0 8px 8px; }
+pre.code .cl { display: block; padding: 0 16px 0 0; border-left: 3px solid transparent; white-space: pre; }
+pre.code .ln { display: inline-block; width: 2.6em; padding-right: 0.9em; text-align: right; color: var(--ink-faint); user-select: none; }
+pre.code .cl.on { background: var(--cur-bg); border-left-color: var(--ink); }
+
+/* memory panel */
+.mem { position: relative; display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 18px 40px; background: var(--panel); border: 1px solid var(--line); border-top: 0; padding: 16px 56px 18px 52px; }
+@media (max-width: 880px) { .mem { grid-template-columns: minmax(0, 1fr); padding: 14px 48px 16px 40px; } }
+.col h2 { font-size: 1rem; margin: 0 0 8px; font-weight: 600; }
+.col h2 small { font-weight: 400; color: var(--ink-faint); font-size: 0.8rem; margin-left: 6px; }
+.fgroup { margin-bottom: 14px; }
+.fgroup h3 { margin: 0 0 6px; font-size: 0.82rem; font-weight: 600; color: var(--ink-soft); }
+.fgroup h3 code { font-size: 0.95em; }
+.fgroup h3 .st { font-weight: 400; color: var(--ink-faint); margin-left: 6px; font-style: italic; }
+.rows { display: flex; flex-direction: column; gap: 4px; }
+.row { display: grid; grid-template-columns: 7.4em 7.6em minmax(0, 1fr) 10.8em; align-items: center; gap: 0 10px; min-height: 30px; padding: 2px 8px; border: 1px solid var(--line); border-left-width: 4px; border-radius: 4px; background: var(--bg); font-size: 0.8rem; }
+.row.k-own { border-left-color: var(--own); } .row.k-ref { border-left-color: var(--ref); } .row.k-mut { border-left-color: var(--mut); } .row.k-val { border-left-color: var(--ink-faint); }
+.r-addr { font-family: "IBM Plex Mono", ui-monospace, monospace; color: var(--ink-faint); font-size: 0.74rem; }
+.r-addr b, .r-val b, .f-v b, .blk-addr b, .sf b { color: var(--ink); font-weight: 600; }
+.r-name { font-family: "IBM Plex Mono", ui-monospace, monospace; font-weight: 600; white-space: nowrap; }
+.pill { font-style: normal; font-weight: 500; font-size: 0.7rem; margin-left: 6px; padding: 0 5px; border: 1px solid currentColor; border-radius: 3px; }
+.r-type { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 0.72rem; opacity: 0.85; overflow-wrap: anywhere; }
+.r-val { font-family: "IBM Plex Mono", ui-monospace, monospace; color: var(--ink-soft); padding: 2px 6px; border-radius: 3px; }
+.r-val .hint { display: block; font-size: 0.68rem; color: var(--ink-faint); line-height: 1.2; }
+.tagx { font-size: 0.68rem; margin-left: 4px; color: var(--ink-faint); font-style: italic; }
+.row.st-empty .r-val { color: var(--ink-faint); font-style: italic; }
+.row.st-empty .r-name, .row.st-empty .r-type { opacity: 0.45; }
+.row.st-moved .r-val .v, .row.st-dropped .r-val .v { text-decoration: line-through; text-decoration-thickness: 1px; opacity: 0.6; }
+.row.st-done .r-val .v { opacity: 0.6; }
+.row.st-done .r-name, .row.st-done .r-type, .row.st-moved .r-name, .row.st-moved .r-type, .row.st-dropped .r-name, .row.st-dropped .r-type { opacity: 0.6; }
+.r-val.struct { display: grid; gap: 3px; padding: 0; }
+.sf { display: block; padding: 2px 6px; border: 1px solid var(--line); border-radius: 3px; }
+.sf.snext { box-shadow: inset 3px 0 0 var(--own); }
+.sf .f-l { font-family: "Literata", Georgia, serif; font-size: 0.66rem; color: var(--ink-faint); margin-right: 6px; }
+.sf.moved .sv { text-decoration: line-through; opacity: 0.6; }
+.sf .f-h { display: block; margin-left: 0; line-height: 1.2; }
+.fgroup.released .row { opacity: 0.5; background: repeating-linear-gradient(135deg, var(--line) 0 3px, transparent 3px 9px); }
+@media (max-width: 560px) {
+  .row { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name val" "addr val" "type type"; padding: 4px 8px; }
+  .r-name { grid-area: name; } .r-addr { grid-area: addr; } .r-type { grid-area: type; } .r-val { grid-area: val; text-align: right; }
+}
+.blocks { display: flex; flex-direction: column; gap: 14px; }
+.blk { border: 1.5px solid var(--ink-faint); border-radius: 6px; background: var(--bg); padding: 6px 8px 8px; font-size: 0.8rem; }
+.blk-head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; padding: 0 2px 6px; }
+.blk-name { font-weight: 600; }
+.blk-addr { font-family: "IBM Plex Mono", ui-monospace, monospace; color: var(--ink-faint); font-size: 0.74rem; }
+.cells { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--line); border-radius: 3px; }
+.cell { padding: 3px 8px; min-height: 30px; }
+.cell.f-next { grid-column: 1 / -1; border-bottom: 1px solid var(--line); box-shadow: inset 3px 0 0 var(--own); }
+.cell.f-pad { border-left: 1px solid var(--line); background: repeating-linear-gradient(135deg, var(--line) 0 3px, transparent 3px 7px); }
+.f-l { display: block; font-size: 0.68rem; color: var(--ink-faint); }
+.f-v { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+.f-h { font-family: "Literata", Georgia, serif; font-size: 0.7rem; color: var(--ink-faint); margin-left: 8px; }
+.blk.st-none { border-style: dashed; opacity: 0.5; }
+.blk.st-none .cells, .blk.st-none .blk-addr { visibility: hidden; }
+.blk.st-freed { border-style: dashed; background: repeating-linear-gradient(135deg, var(--line) 0 3px, transparent 3px 9px); }
+.blk.st-freed .cells { visibility: hidden; }
+
+/* what this step touched (neutral, so the colors above keep their meaning) */
+.t-R { outline: 2px dashed var(--ink); outline-offset: 1px; }
+.t-W { background: var(--w-bg) !important; outline: 2px solid var(--ink); outline-offset: 1px; }
+.t-B { outline: 2px dotted var(--ink-soft); outline-offset: 1px; }
+.t-N { outline: 2px dashed var(--ink-faint); outline-offset: 1px; }
+.blk.t-A { outline: 2.5px solid var(--ink); outline-offset: 3px; }
+.blk.t-F { outline: 2.5px dashed var(--ink-soft); outline-offset: 3px; }
+
+svg.wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+.w { fill: none; }
+.w-own { stroke: var(--own); stroke-width: 2.6; } .w-ref { stroke: var(--ref); stroke-width: 1.7; } .w-mut { stroke: var(--mut); stroke-width: 2; stroke-dasharray: 6 4; }
+.m-own { fill: var(--own); } .m-ref { fill: var(--ref); } .m-mut { fill: var(--mut); }
+
+/* step bar */
+.bar { position: sticky; bottom: 0; z-index: 4; background: var(--panel); border: 1px solid var(--line); border-top: 2px solid var(--ink); border-radius: 0 0 8px 8px; padding: 10px 16px 12px; box-shadow: 0 -6px 16px -12px rgba(0, 0, 0, 0.35); }
+.bar-top { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+.count { font-size: 0.82rem; color: var(--ink-soft); font-variant-numeric: tabular-nums; flex: none; }
+.now { font-size: 0.78rem; white-space: pre; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.cap { margin: 6px 0 8px; font-size: 0.95rem; min-height: 3.1em; }
+.cap code { font-size: 0.85em; background: var(--code-bg); padding: 0 4px; border-radius: 3px; }
+.ledger { display: flex; flex-wrap: wrap; gap: 6px; min-height: 28px; margin-bottom: 10px; }
+.chip { font-size: 0.78rem; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); background: var(--bg); white-space: nowrap; }
+.chip .op { font-weight: 600; margin-right: 4px; }
+.chip small { color: var(--ink-faint); margin-left: 4px; }
+.chip .seq { color: var(--ink-faint); margin-right: 4px; font-variant-numeric: tabular-nums; }
+.chip.R { border: 1.5px dashed var(--ink); } .chip.W { background: var(--w-bg); border: 1.5px solid var(--ink); }
+.chip.A { border: 1.5px solid var(--ink); } .chip.F { border: 1.5px dashed var(--ink-soft); }
+.chip.B { border: 1.5px dotted var(--ink-soft); } .chip.N { border: 1.5px dashed var(--ink-faint); }
+.chip.cause { padding-left: 4px; }
+.chip .cz { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; vertical-align: 0; background: var(--x); }
+.cz-borrow { --x: var(--i-borrow); } .cz-deref { --x: var(--i-deref); } .cz-move { --x: var(--i-move); } .cz-drop { --x: var(--i-drop); } .cz-path { --x: var(--i-gray); }
+.cz-copy { background: transparent !important; box-shadow: inset 0 0 0 1.5px var(--i-move); }
+.btns { display: flex; gap: 8px; align-items: center; }
+.btns button { font: inherit; font-size: 0.9rem; padding: 4px 16px; border: 1px solid var(--ink-soft); border-radius: 999px; background: transparent; color: var(--ink); cursor: pointer; }
+.btns button.primary { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.btns button:disabled { opacity: 0.4; cursor: default; }
+.btns .keys { margin-left: auto; font-size: 0.78rem; color: var(--ink-faint); }
+@media (max-width: 560px) {
+  .btns .keys { display: none; } .bar { padding: 8px 12px 10px; }
+  .cap { font-size: 0.88rem; min-height: 0; margin: 4px 0 6px; }
+  .ledger { flex-wrap: nowrap; overflow-x: auto; margin-bottom: 8px; padding-bottom: 2px; }
+  .btns button { padding: 3px 14px; }
+}
+</style>
+</head>
+<body>
+<button class="theme-btn" type="button" id="themeBtn">Dark</button>
+<div class="wrap">
+<h1>What the compiler fills in</h1>
+<p class="sub">One small program twice: as written, and with every step the compiler adds spelled out. Step through it and watch the stack and the heap.</p>
+
+<div class="legend" aria-label="Legend">
+  <span class="lh">who holds it</span>
+  <span class="row-items">
+    <span class="item"><svg viewBox="0 0 32 10" aria-hidden="true"><line x1="1" y1="5" x2="31" y2="5" class="w w-own"/></svg><span class="k-own k-name">owns</span></span>
+    <span class="item"><svg viewBox="0 0 32 10" aria-hidden="true"><line x1="1" y1="5" x2="31" y2="5" class="w w-ref"/></svg><span class="k-ref k-name">&amp; shared</span></span>
+    <span class="item"><svg viewBox="0 0 32 10" aria-hidden="true"><line x1="1" y1="5" x2="31" y2="5" class="w w-mut"/></svg><span class="k-mut k-name">&amp;mut mutable</span></span>
+    <span class="item"><span class="k-val k-name">i32</span> plain value</span>
+  </span>
+  <span class="lh">added by the compiler</span>
+  <span class="row-items">
+    <span class="item"><code class="g g-borrow lg">&amp;</code> borrow: takes an address</span>
+    <span class="item"><code class="g g-deref lg">*</code> dereference: follows an address</span>
+    <span class="item"><span class="g g-move lg">move</span> bytes copied, source retired</span>
+    <span class="item"><span class="g g-copy lg">copy</span> bytes copied, source kept</span>
+    <span class="item"><span class="g g-drop lg">drop</span> cleanup, maybe a free</span>
+    <span class="item"><code class="g g-type lg">: T</code> type inferred</span>
+    <span class="item"><code class="g g-path lg">Option::</code> method resolved</span>
+  </span>
+  <span class="lh">this step</span>
+  <span class="row-items">
+    <span class="item"><span class="mark r"></span>read</span>
+    <span class="item"><span class="mark w"></span>write</span>
+    <span class="item"><span class="mark b"></span>address taken, nothing read</span>
+    <span class="item"><span class="mark f"></span>freed</span>
+  </span>
+</div>
+<p class="note">In the written code an underline marks each spot where the compiler adds something; hover it for the list. The colored chips in the ledger show which inserted step caused each memory access. Gray ones are decisions made at compile time and cost nothing when the program runs. Addresses were read with a debugger (gdb) from one run of the explicit version, debug build, x86-64 Linux; they change on every run. Both versions compile, and they make the same allocations and frees in the same order.</p>
+
+<section class="demo" aria-label="Step-through trace">
+<div class="codehead">As written <small>the guide's filter, unchanged</small></div>
+<pre class="code w" id="wcode"><code><span class="cl" data-l="1"><span class="ln">1</span><span class="c-kw">fn</span> keep_even(<span class="k-own k-name">head</span>: Option&lt;Box&lt;ListNode&gt;&gt;) -&gt; Option&lt;Box&lt;ListNode&gt;&gt; {</span><span class="cl" data-l="2"><span class="ln">2</span>    <span class="c-kw">let</span> <span class="c-kw">mut</span> <span class="umark" title="type inferred"><span class="u u-type ud1"><span class="k-own k-name">dummy</span></span></span> = ListNode::new(<span class="c-num">0</span>);</span><span class="cl" data-l="3"><span class="ln">3</span>    <span class="c-kw">let</span> <span class="c-kw">mut</span> <span class="umark" title="type inferred"><span class="u u-type ud1"><span class="k-mut k-name">tail</span></span></span> = &amp;<span class="c-kw">mut</span> <span class="k-own k-name">dummy</span>;</span><span class="cl" data-l="4"><span class="ln">4</span>    <span class="c-kw">let</span> <span class="c-kw">mut</span> <span class="umark" title="type inferred"><span class="u u-type ud1"><span class="k-own k-name">cur</span></span></span> = <span class="umark" title="move: bytes copied, source retired"><span class="u u-move ud1"><span class="k-own k-name">head</span></span></span>;</span><span class="cl" data-l="5"><span class="ln">5</span>    <span class="c-kw">while</span> <span class="c-kw">let</span> Some(<span class="c-kw">mut</span> <span class="k-own k-name">node</span>) = <span class="umark" title="move: bytes copied, source retired"><span class="u u-move ud1"><span class="k-own k-name">cur</span></span></span> {</span><span class="cl" data-l="6"><span class="ln">6</span>        <span class="k-own k-name">cur</span> = <span class="umark" title="method resolved to a plain function call; borrow inserted; dereference inserted"><span class="u u-path ud1"><span class="u u-borrow ud2"><span class="u u-deref ud3"><span class="k-own k-name">node</span>.next.take()</span></span></span></span>;</span><span class="cl" data-l="7"><span class="ln">7</span>        <span class="c-kw">if</span> <span class="umark" title="dereference inserted; copy: bytes copied, source still usable"><span class="u u-deref ud1"><span class="u u-copy ud2"><span class="k-own k-name">node</span>.val</span></span></span> % <span class="c-num">2</span> == <span class="c-num">0</span> {</span><span class="cl" data-l="8"><span class="ln">8</span>            <span class="umark" title="drop inserted; dereference inserted"><span class="u u-drop ud1"><span class="u u-deref ud2"><span class="k-mut k-name">tail</span>.next</span></span></span> = Some(<span class="umark" title="move: bytes copied, source retired"><span class="u u-move ud1"><span class="k-own k-name">node</span></span></span>);</span><span class="cl" data-l="9"><span class="ln">9</span>            <span class="k-mut k-name">tail</span> = <span class="umark" title="borrow inserted; dereference inserted; method resolved to a plain function call"><span class="u u-borrow ud1"><span class="u u-deref ud2"><span class="u u-path ud3"><span class="k-mut k-name">tail</span>.next.as_mut().unwrap()</span></span></span></span>;</span><span class="cl" data-l="10"><span class="ln">10</span>        <span class="umark" title="drop inserted"><span class="u u-drop ud1">}</span></span></span><span class="cl" data-l="11"><span class="ln">11</span>    }</span><span class="cl" data-l="12"><span class="ln">12</span>    <span class="umark" title="move: bytes copied, source retired"><span class="u u-move ud1"><span class="k-own k-name">dummy</span>.next</span></span></span><span class="cl" data-l="13"><span class="ln">13</span><span class="umark" title="drop inserted"><span class="u u-drop ud1">}</span></span></span><span class="cl" data-l="14"><span class="ln">14</span> </span><span class="cl" data-l="15"><span class="ln">15</span><span class="c-kw">fn</span> main() {</span><span class="cl" data-l="16"><span class="ln">16</span>    <span class="c-kw">let</span> <span class="umark" title="type inferred"><span class="u u-type ud1"><span class="k-own k-name">n4</span></span></span> = Box::new(<span class="umark" title="move: bytes copied, source retired"><span class="u u-move ud1">ListNode::new(<span class="c-num">4</span>)</span></span>);</span><span class="cl" data-l="17"><span class="ln">17</span>    <span class="c-kw">let</span> <span class="umark" title="type inferred"><span class="u u-type ud1"><span class="k-own k-name">n2</span></span></span> = Box::new(ListNode { val: <span class="c-num">2</span>, next: Some(<span class="umark" title="move: bytes copied, source retired"><span class="u u-move ud1"><span class="k-own k-name">n4</span></span></span>) });</span><span class="cl" data-l="18"><span class="ln">18</span>    <span class="c-kw">let</span> <span class="umark" title="type inferred"><span class="u u-type ud1"><span class="k-own k-name">list</span></span></span> = Some(Box::new(ListNode { val: <span class="c-num">1</span>, next: Some(<span class="umark" title="move: bytes copied, source retired"><span class="u u-move ud1"><span class="k-own k-name">n2</span></span></span>) }));</span><span class="cl" data-l="19"><span class="ln">19</span>    <span class="c-kw">let</span> <span class="umark" title="type inferred"><span class="u u-type ud1"><span class="k-own k-name">evens</span></span></span> = keep_even(<span class="umark" title="move: bytes copied, source retired"><span class="u u-move ud1"><span class="k-own k-name">list</span></span></span>);</span><span class="cl" data-l="20"><span class="ln">20</span>    <span class="c-kw">let</span> <span class="c-kw">mut</span> <span class="umark" title="type inferred"><span class="u u-type ud1"><span class="k-val k-name">total</span></span></span> = <span class="c-num">0</span>;</span><span class="cl" data-l="21"><span class="ln">21</span>    <span class="c-kw">let</span> <span class="c-kw">mut</span> <span class="umark" title="type inferred"><span class="u u-type ud1"><span class="k-ref k-name">cur</span></span></span> = &amp;<span class="k-own k-name">evens</span>;</span><span class="cl" data-l="22"><span class="ln">22</span>    <span class="c-kw">while</span> <span class="c-kw">let</span> <span class="umark" title="borrow inserted"><span class="u u-borrow ud1">Some(<span class="k-ref k-name">node</span>)</span></span> = <span class="k-ref k-name">cur</span> {</span><span class="cl" data-l="23"><span class="ln">23</span>        <span class="k-val k-name">total</span> += <span class="umark" title="copy: bytes copied, source still usable; dereference inserted"><span class="u u-copy ud1"><span class="u u-deref ud2"><span class="k-ref k-name">node</span>.val</span></span></span>;</span><span class="cl" data-l="24"><span class="ln">24</span>        <span class="k-ref k-name">cur</span> = &amp;<span class="umark" title="dereference inserted"><span class="u u-deref ud1"><span class="k-ref k-name">node</span>.next</span></span>;</span><span class="cl" data-l="25"><span class="ln">25</span>    }</span><span class="cl" data-l="26"><span class="ln">26</span><span class="umark" title="drop inserted"><span class="u u-drop ud1">}</span></span></span></code></pre>
+<div class="codehead">As compiled <small>same program, inserted steps spelled out (this version also compiles)</small></div>
+<pre class="code" id="ecode"><code><span class="cl" data-l="1"><span class="ln">1</span><span class="c-kw">fn</span> keep_even(<span class="k-own k-name">head</span>: Option&lt;Box&lt;ListNode&gt;&gt;) -&gt; Option&lt;Box&lt;ListNode&gt;&gt; {</span><span class="cl" data-l="2"><span class="ln">2</span>    <span class="c-kw">let</span> <span class="c-kw">mut</span> <span class="k-own k-name">dummy</span><span class="g g-type" title="type inferred">: ListNode</span> = ListNode::new(<span class="c-num">0</span>);</span><span class="cl" data-l="3"><span class="ln">3</span>    <span class="c-kw">let</span> <span class="c-kw">mut</span> <span class="k-mut k-name">tail</span><span class="g g-type" title="type inferred">: &amp;mut ListNode</span> = &amp;<span class="c-kw">mut</span> <span class="k-own k-name">dummy</span>;</span><span class="cl" data-l="4"><span class="ln">4</span>    <span class="c-kw">let</span> <span class="c-kw">mut</span> <span class="k-own k-name">cur</span><span class="g g-type" title="type inferred">: Option&lt;Box&lt;ListNode&gt;&gt;</span> = <span class="g g-move" title="move: bytes copied, source retired">move</span> <span class="k-own k-name">head</span>;</span><span class="cl" data-l="5"><span class="ln">5</span>    <span class="c-kw">while</span> <span class="c-kw">let</span> Some(<span class="c-kw">mut</span> <span class="k-own k-name">node</span>) = <span class="g g-move" title="move: bytes copied, source retired">move</span> <span class="k-own k-name">cur</span> {</span><span class="cl" data-l="6"><span class="ln">6</span>        <span class="k-own k-name">cur</span> = <span class="g g-path" title="method resolved to a plain function call">Option::take(</span><span class="g g-borrow" title="borrow inserted">&amp;mut</span> <span class="g g-deref" title="dereference inserted">(*</span><span class="k-own k-name">node</span><span class="g g-deref" title="dereference inserted">)</span>.next<span class="g g-path" title="method resolved to a plain function call">)</span>;</span><span class="cl" data-l="7"><span class="ln">7</span>        <span class="c-kw">if</span> <span class="g g-deref" title="dereference inserted">(*</span><span class="k-own k-name">node</span><span class="g g-deref" title="dereference inserted">)</span>.val % <span class="c-num">2</span> == <span class="c-num">0</span> {</span><span class="cl" data-l="8"><span class="ln">8</span>            <span class="g g-drop" title="drop inserted">drop old: None</span> <span class="g g-deref" title="dereference inserted">(*</span><span class="k-mut k-name">tail</span><span class="g g-deref" title="dereference inserted">)</span>.next = Some(<span class="g g-move" title="move: bytes copied, source retired">move</span> <span class="k-own k-name">node</span>);</span><span class="cl" data-l="9"><span class="ln">9</span>            <span class="k-mut k-name">tail</span> = <span class="g g-borrow" title="borrow inserted">&amp;mut</span> <span class="g g-deref" title="dereference inserted">**</span><span class="g g-path" title="method resolved to a plain function call">Option::as_mut(</span><span class="g g-borrow" title="borrow inserted">&amp;mut</span> <span class="g g-deref" title="dereference inserted">(*</span><span class="k-mut k-name">tail</span><span class="g g-deref" title="dereference inserted">)</span>.next<span class="g g-path" title="method resolved to a plain function call">)</span>.unwrap();</span><span class="cl" data-l="10"><span class="ln">10</span>        } <span class="g g-drop" title="drop inserted">else { drop(node); }</span></span><span class="cl" data-l="11"><span class="ln">11</span>    }</span><span class="cl" data-l="12"><span class="ln">12</span>    <span class="g g-move" title="move: bytes copied, source retired">move</span> <span class="k-own k-name">dummy</span>.next</span><span class="cl" data-l="13"><span class="ln">13</span>    <span class="g g-drop" title="drop inserted">drop(cur): it holds None, nothing to free</span></span><span class="cl" data-l="14"><span class="ln">14</span>}</span><span class="cl" data-l="15"><span class="ln">15</span> </span><span class="cl" data-l="16"><span class="ln">16</span><span class="c-kw">fn</span> main() {</span><span class="cl" data-l="17"><span class="ln">17</span>    <span class="c-kw">let</span> <span class="k-own k-name">n4</span><span class="g g-type" title="type inferred">: Box&lt;ListNode&gt;</span> = Box::new(<span class="g g-move" title="move: bytes copied, source retired">move</span> ListNode::new(<span class="c-num">4</span>));</span><span class="cl" data-l="18"><span class="ln">18</span>    <span class="c-kw">let</span> <span class="k-own k-name">n2</span><span class="g g-type" title="type inferred">: Box&lt;ListNode&gt;</span> = Box::new(ListNode { val: <span class="c-num">2</span>, next: Some(<span class="g g-move" title="move: bytes copied, source retired">move</span> <span class="k-own k-name">n4</span>) });</span><span class="cl" data-l="19"><span class="ln">19</span>    <span class="c-kw">let</span> <span class="k-own k-name">list</span><span class="g g-type" title="type inferred">: Option&lt;Box&lt;ListNode&gt;&gt;</span> = Some(Box::new(ListNode { val: <span class="c-num">1</span>, next: Some(<span class="g g-move" title="move: bytes copied, source retired">move</span> <span class="k-own k-name">n2</span>) }));</span><span class="cl" data-l="20"><span class="ln">20</span>    <span class="c-kw">let</span> <span class="k-own k-name">evens</span><span class="g g-type" title="type inferred">: Option&lt;Box&lt;ListNode&gt;&gt;</span> = keep_even(<span class="g g-move" title="move: bytes copied, source retired">move</span> <span class="k-own k-name">list</span>);</span><span class="cl" data-l="21"><span class="ln">21</span>    <span class="c-kw">let</span> <span class="c-kw">mut</span> <span class="k-val k-name">total</span><span class="g g-type" title="type inferred">: i32</span> = <span class="c-num">0</span>;</span><span class="cl" data-l="22"><span class="ln">22</span>    <span class="c-kw">let</span> <span class="c-kw">mut</span> <span class="k-ref k-name">cur</span><span class="g g-type" title="type inferred">: &amp;Option&lt;Box&lt;ListNode&gt;&gt;</span> = &amp;<span class="k-own k-name">evens</span>;</span><span class="cl" data-l="23"><span class="ln">23</span>    <span class="c-kw">while</span> <span class="c-kw">let</span> <span class="g g-borrow" title="borrow inserted">&amp;</span>Some(<span class="g g-borrow" title="borrow inserted">ref</span> <span class="k-ref k-name">node</span>) = <span class="k-ref k-name">cur</span> {</span><span class="cl" data-l="24"><span class="ln">24</span>        <span class="k-val k-name">total</span> += <span class="g g-copy" title="copy: bytes copied, source still usable">copy</span> <span class="g g-deref" title="dereference inserted">(**</span><span class="k-ref k-name">node</span><span class="g g-deref" title="dereference inserted">)</span>.val;</span><span class="cl" data-l="25"><span class="ln">25</span>        <span class="k-ref k-name">cur</span> = &amp;<span class="g g-deref" title="dereference inserted">(**</span><span class="k-ref k-name">node</span><span class="g g-deref" title="dereference inserted">)</span>.next;</span><span class="cl" data-l="26"><span class="ln">26</span>    }</span><span class="cl" data-l="27"><span class="ln">27</span>    <span class="g g-drop" title="drop inserted">drop(evens): frees node 4, then node 2</span></span><span class="cl" data-l="28"><span class="ln">28</span>}</span></code></pre>
+<div class="mem" id="mem">
+  <div class="col">
+    <h2>Stack <small>addresses fall as you go down; a callee's frame sits below its caller's</small></h2>
+    <div id="stack"></div>
+  </div>
+  <div class="col">
+    <h2>Heap <small>16-byte blocks from the allocator</small></h2>
+    <div class="blocks" id="heap"></div>
+  </div>
+  <svg class="wires" id="wires" aria-hidden="true">
+    <defs>
+      <marker id="mk-own" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="m-own"/></marker>
+      <marker id="mk-ref" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="m-ref"/></marker>
+      <marker id="mk-mut" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="m-mut"/></marker>
+    </defs>
+    <g id="wireG"></g>
+  </svg>
+</div>
+<div class="bar" id="bar">
+  <div class="bar-top"><span class="count" id="count"></span><code class="now" id="now"></code></div>
+  <p class="cap" id="cap" aria-live="polite"></p>
+  <div class="ledger" id="ledger"></div>
+  <div class="btns">
+    <button type="button" id="back">Back</button>
+    <button type="button" class="primary" id="step">Step</button>
+    <button type="button" id="reset">Start over</button>
+    <span class="keys">Arrow keys step too</span>
+  </div>
+</div>
+</section>
+</div>
+
+<script>
+var DATA = {"frames_def": [{"id": "m", "name": "main"}, {"id": "k", "name": "keep_even"}], "slots": [{"id": "m.node", "name": "node", "frame": "m", "type": "&Box<ListNode>", "kind": "ref", "addr": "0x7ffd5dcae368", "size": 8, "struct": false}, {"id": "m.list", "name": "list", "frame": "m", "type": "Option<Box<ListNode>>", "kind": "own", "addr": "0x7ffd5dcae360", "size": 8, "struct": false}, {"id": "m.n2", "name": "n2", "frame": "m", "type": "Box<ListNode>", "kind": "own", "addr": "0x7ffd5dcae358", "size": 8, "struct": false}, {"id": "m.n4", "name": "n4", "frame": "m", "type": "Box<ListNode>", "kind": "own", "addr": "0x7ffd5dcae350", "size": 8, "struct": false}, {"id": "m.cur", "name": "cur", "frame": "m", "type": "&Option<Box<ListNode>>", "kind": "ref", "addr": "0x7ffd5dcae348", "size": 8, "struct": false}, {"id": "m.total", "name": "total", "frame": "m", "type": "i32", "kind": "val", "addr": "0x7ffd5dcae344", "size": 4, "struct": false}, {"id": "m.evens", "name": "evens", "frame": "m", "type": "Option<Box<ListNode>>", "kind": "own", "addr": "0x7ffd5dcae338", "size": 8, "struct": false}, {"id": "k.node", "name": "node", "frame": "k", "type": "Box<ListNode>", "kind": "own", "addr": "0x7ffd5dcae2b8", "size": 8, "struct": false}, {"id": "k.cur", "name": "cur", "frame": "k", "type": "Option<Box<ListNode>>", "kind": "own", "addr": "0x7ffd5dcae2b0", "size": 8, "struct": false}, {"id": "k.tail", "name": "tail", "frame": "k", "type": "&mut ListNode", "kind": "mut", "addr": "0x7ffd5dcae2a8", "size": 8, "struct": false}, {"id": "k.dummy", "name": "dummy", "frame": "k", "type": "ListNode", "kind": "own", "addr": "0x7ffd5dcae298", "size": 16, "struct": true}, {"id": "k.head", "name": "head", "frame": "k", "type": "Option<Box<ListNode>>", "kind": "own", "addr": "0x7ffd5dcae290", "size": 8, "struct": false}], "blocks": [{"id": "N4", "name": "node 4", "addr": "0x55ab4cc1fd60"}, {"id": "N2", "name": "node 2", "addr": "0x55ab4cc1fd80"}, {"id": "N1", "name": "node 1", "addr": "0x55ab4cc1fda0"}], "frames": [{"line": 16, "wline": 15, "cap": "Entering <code>main</code> reserves its stack frame: a slot for every local, before any line runs.", "ops": [{"op": "frame", "f": "m", "st": "live"}], "touch": []}, {"line": 17, "wline": 16, "cap": "The node is built, then moved into a fresh 16-byte heap block. <code>n4</code> gets the block's address.", "ops": [{"op": "alloc", "b": "N4", "next": null, "val": 4}, {"op": "set", "s": "m.n4", "ptr": "block:N4"}], "touch": [["A", "block:N4", "drop"], ["W", "next:N4", "move"], ["W", "val:N4", "move"], ["W", "slot:m.n4", ""]]}, {"line": 18, "wline": 17, "cap": "Moving <code>n4</code> copies its 8 bytes into node 2's <code>next</code>. <code>n4</code> keeps the bits but is never read again.", "ops": [{"op": "alloc", "b": "N2", "next": "N4", "val": 2}, {"op": "moved", "s": "m.n4"}, {"op": "set", "s": "m.n2", "ptr": "block:N2"}], "touch": [["R", "slot:m.n4", "move"], ["A", "block:N2", ""], ["W", "next:N2", "move"], ["W", "val:N2", ""], ["W", "slot:m.n2", ""]]}, {"line": 19, "wline": 18, "cap": "Node 1 owns node 2, which owns node 4.", "ops": [{"op": "alloc", "b": "N1", "next": "N2", "val": 1}, {"op": "moved", "s": "m.n2"}, {"op": "set", "s": "m.list", "ptr": "block:N1"}], "touch": [["R", "slot:m.n2", "move"], ["A", "block:N1", ""], ["W", "next:N1", "move"], ["W", "val:N1", ""], ["W", "slot:m.list", ""]]}, {"line": 20, "wline": 19, "cap": "The call pushes <code>keep_even</code>'s frame below <code>main</code>'s. <code>list</code>'s 8 bytes are copied into <code>head</code>; <code>list</code> is moved.", "ops": [{"op": "frame", "f": "k", "st": "live"}, {"op": "moved", "s": "m.list"}, {"op": "set", "s": "k.head", "ptr": "block:N1"}], "touch": [["R", "slot:m.list", "move"], ["W", "slot:k.head", "move"]]}, {"line": 2, "wline": 2, "cap": "A whole <code>ListNode</code> on the stack: 16 bytes inside this frame, no allocator call. Its type was inferred.", "ops": [{"op": "sset", "s": "k.dummy", "next": null, "val": 0}], "touch": [["W", "snext:k.dummy", ""], ["W", "sval:k.dummy", ""]]}, {"line": 3, "wline": 3, "cap": "<code>tail</code> holds the stack address of <code>dummy</code>. Its type, <code>&amp;mut ListNode</code>, was inferred.", "ops": [{"op": "set", "s": "k.tail", "ptr": "slot:k.dummy"}], "touch": [["W", "slot:k.tail", ""]]}, {"line": 4, "wline": 4, "cap": "Another 8-byte move: <code>head</code> into <code>cur</code>.", "ops": [{"op": "moved", "s": "k.head"}, {"op": "set", "s": "k.cur", "ptr": "block:N1"}], "touch": [["R", "slot:k.head", "move"], ["W", "slot:k.cur", "move"]]}, {"line": 5, "wline": 5, "cap": "<code>cur</code> holds a box, so the pattern moves it into <code>node</code>. <code>cur</code> is left moved-out.", "ops": [{"op": "moved", "s": "k.cur"}, {"op": "set", "s": "k.node", "ptr": "block:N1"}], "touch": [["R", "slot:k.cur", ""], ["R", "slot:k.cur", "move"], ["W", "slot:k.node", "move"]]}, {"line": 6, "wline": 6, "cap": "<code>Option::take</code> gets the address of node 1's <code>next</code> (no memory touched for that), copies the key out into <code>cur</code> and writes <code>None</code> in its place. <code>cur</code> was moved-out, so nothing is dropped before the write.", "ops": [{"op": "set", "s": "k.cur", "ptr": "block:N2"}, {"op": "field", "b": "N1", "next": null}], "touch": [["R", "slot:k.node", "deref"], ["B", "next:N1", "borrow"], ["R", "next:N1", "path"], ["W", "slot:k.cur", ""], ["W", "next:N1", "path"]]}, {"line": 7, "wline": 7, "cap": "<code>(*node).val</code>: one hop through the box. 1 is odd.", "ops": [], "touch": [["R", "slot:k.node", "deref"], ["R", "val:N1", "copy"]]}, {"line": 10, "wline": 10, "cap": "The <code>else</code> the compiler adds: <code>node</code> still owns node 1, so dropping it frees the block.", "ops": [{"op": "dropped", "s": "k.node"}, {"op": "free", "b": "N1"}], "touch": [["R", "slot:k.node", "drop"], ["F", "block:N1", "drop"]]}, {"line": 5, "wline": 5, "cap": "Next box moves out of <code>cur</code> into <code>node</code>.", "ops": [{"op": "moved", "s": "k.cur"}, {"op": "set", "s": "k.node", "ptr": "block:N2"}], "touch": [["R", "slot:k.cur", ""], ["R", "slot:k.cur", "move"], ["W", "slot:k.node", "move"]]}, {"line": 6, "wline": 6, "cap": "Same <code>take</code>, on node 2.", "ops": [{"op": "set", "s": "k.cur", "ptr": "block:N4"}, {"op": "field", "b": "N2", "next": null}], "touch": [["R", "slot:k.node", "deref"], ["B", "next:N2", "borrow"], ["R", "next:N2", "path"], ["W", "slot:k.cur", ""], ["W", "next:N2", "path"]]}, {"line": 7, "wline": 7, "cap": "2 is even.", "ops": [], "touch": [["R", "slot:k.node", "deref"], ["R", "val:N2", "copy"]]}, {"line": 8, "wline": 8, "cap": "<code>tail</code> points at <code>dummy</code>, so this write lands on the stack: <code>dummy.next</code> now owns node 2. The old value was <code>None</code>, so the inserted drop frees nothing.", "ops": [{"op": "sset", "s": "k.dummy", "next": "block:N2"}, {"op": "moved", "s": "k.node"}], "touch": [["R", "slot:k.tail", "deref"], ["N", "snext:k.dummy", "drop"], ["R", "slot:k.node", "move"], ["W", "snext:k.dummy", "move"]]}, {"line": 9, "wline": 9, "cap": "<code>as_mut().unwrap()</code> gives <code>&amp;mut Box</code>; the inserted <code>&amp;mut **</code> turns it into <code>&amp;mut ListNode</code>. <code>tail</code> leaves the stack and points into the heap.", "ops": [{"op": "set", "s": "k.tail", "ptr": "block:N2"}], "touch": [["R", "slot:k.tail", "deref"], ["B", "snext:k.dummy", "borrow"], ["R", "snext:k.dummy", "deref"], ["W", "slot:k.tail", ""]]}, {"line": 5, "wline": 5, "cap": "Last box moves into <code>node</code>.", "ops": [{"op": "moved", "s": "k.cur"}, {"op": "set", "s": "k.node", "ptr": "block:N4"}], "touch": [["R", "slot:k.cur", ""], ["R", "slot:k.cur", "move"], ["W", "slot:k.node", "move"]]}, {"line": 6, "wline": 6, "cap": "Node 4's <code>next</code> is already <code>None</code>; <code>take</code> still writes <code>None</code> back.", "ops": [{"op": "set", "s": "k.cur", "none": true}, {"op": "field", "b": "N4", "next": null}], "touch": [["R", "slot:k.node", "deref"], ["B", "next:N4", "borrow"], ["R", "next:N4", "path"], ["W", "slot:k.cur", ""], ["W", "next:N4", "path"]]}, {"line": 7, "wline": 7, "cap": "4 is even.", "ops": [], "touch": [["R", "slot:k.node", "deref"], ["R", "val:N4", "copy"]]}, {"line": 8, "wline": 8, "cap": "Now <code>tail</code> points at node 2, so the same line writes on the heap this time.", "ops": [{"op": "field", "b": "N2", "next": "N4"}, {"op": "moved", "s": "k.node"}], "touch": [["R", "slot:k.tail", "deref"], ["N", "next:N2", "drop"], ["R", "slot:k.node", "move"], ["W", "next:N2", "move"]]}, {"line": 9, "wline": 9, "cap": "<code>tail</code> moves on to node 4.", "ops": [{"op": "set", "s": "k.tail", "ptr": "block:N4"}], "touch": [["R", "slot:k.tail", "deref"], ["B", "next:N2", "borrow"], ["R", "next:N2", "deref"], ["W", "slot:k.tail", ""]]}, {"line": 5, "wline": 5, "cap": "<code>cur</code> is <code>None</code>: the pattern fails and the loop ends. Nothing was moved this time.", "ops": [{"op": "done", "s": "k.tail"}], "touch": [["R", "slot:k.cur", ""]]}, {"line": 12, "wline": 12, "cap": "The return value is <code>dummy.next</code>'s 8 bytes, moved out of the stack node.", "ops": [{"op": "smoved", "s": "k.dummy"}], "touch": [["R", "snext:k.dummy", "move"]]}, {"line": 14, "wline": 13, "cap": "<code>keep_even</code>'s frame is popped; its bytes stay, unused. <code>main</code> stores the returned address in <code>evens</code>.", "ops": [{"op": "frame", "f": "k", "st": "released"}, {"op": "set", "s": "m.evens", "ptr": "block:N2"}], "touch": [["N", "slot:k.cur", "drop"], ["W", "slot:m.evens", "move"]]}, {"line": 21, "wline": 20, "cap": "<code>total</code>: an <code>i32</code>, 4 bytes. The type was inferred.", "ops": [{"op": "frame", "f": "k", "st": "hidden"}, {"op": "set", "s": "m.total", "val": 0}], "touch": [["W", "slot:m.total", ""]]}, {"line": 22, "wline": 21, "cap": "<code>cur</code> holds the stack address of <code>evens</code>.", "ops": [{"op": "set", "s": "m.cur", "ptr": "slot:m.evens"}], "touch": [["B", "slot:m.evens", ""], ["W", "slot:m.cur", ""]]}, {"line": 23, "wline": 22, "cap": "The inserted <code>&amp;</code> pattern and <code>ref</code> make <code>node</code> a reference to the box inside <code>evens</code>: the same stack address <code>cur</code> holds.", "ops": [{"op": "set", "s": "m.node", "ptr": "slot:m.evens"}], "touch": [["R", "slot:m.cur", "deref"], ["R", "slot:m.evens", ""], ["B", "slot:m.evens", "borrow"], ["W", "slot:m.node", "borrow"]]}, {"line": 24, "wline": 23, "cap": "<code>(**node).val</code>: <code>node</code> leads to <code>evens</code>, <code>evens</code> leads to node 2, then the value. Two hops.", "ops": [{"op": "set", "s": "m.total", "val": 2}], "touch": [["R", "slot:m.node", "deref"], ["R", "slot:m.evens", "deref"], ["R", "val:N2", "copy"], ["R", "slot:m.total", ""], ["W", "slot:m.total", ""]]}, {"line": 25, "wline": 24, "cap": "<code>cur</code> moves onto the hook inside node 2, on the heap.", "ops": [{"op": "set", "s": "m.cur", "ptr": "next:N2"}], "touch": [["R", "slot:m.node", "deref"], ["R", "slot:m.evens", "deref"], ["B", "next:N2", ""], ["W", "slot:m.cur", ""]]}, {"line": 23, "wline": 22, "cap": "The hook holds node 4's key, so <code>node</code> becomes a reference to that hook.", "ops": [{"op": "set", "s": "m.node", "ptr": "next:N2"}], "touch": [["R", "slot:m.cur", "deref"], ["R", "next:N2", ""], ["B", "next:N2", "borrow"], ["W", "slot:m.node", "borrow"]]}, {"line": 24, "wline": 23, "cap": "Two hops again: the hook in node 2, then node 4's value. <code>total</code> is 6.", "ops": [{"op": "set", "s": "m.total", "val": 6}], "touch": [["R", "slot:m.node", "deref"], ["R", "next:N2", "deref"], ["R", "val:N4", "copy"], ["R", "slot:m.total", ""], ["W", "slot:m.total", ""]]}, {"line": 25, "wline": 24, "cap": "<code>cur</code> moves onto node 4's hook.", "ops": [{"op": "set", "s": "m.cur", "ptr": "next:N4"}], "touch": [["R", "slot:m.node", "deref"], ["R", "next:N2", "deref"], ["B", "next:N4", ""], ["W", "slot:m.cur", ""]]}, {"line": 23, "wline": 22, "cap": "Node 4's hook is empty. The loop ends.", "ops": [{"op": "done", "s": "m.cur"}, {"op": "done", "s": "m.node"}], "touch": [["R", "slot:m.cur", "deref"], ["R", "next:N4", ""]]}, {"line": 27, "wline": 26, "cap": "End of <code>main</code>. Dropping <code>evens</code> drops node 2's fields first, so node 4 is freed first.", "ops": [{"op": "free", "b": "N4"}], "touch": [["R", "slot:m.evens", "drop"], ["R", "next:N2", "drop"], ["F", "block:N4", "drop"]]}, {"line": 28, "wline": 26, "cap": "Then node 2. <code>main</code>'s frame is popped.", "ops": [{"op": "free", "b": "N2"}, {"op": "frame", "f": "m", "st": "released"}], "touch": [["F", "block:N2", "drop"]]}]};
+(function () {
+  var root = document.documentElement, tb = document.getElementById("themeBtn");
+  function isDark() { var t = root.getAttribute("data-theme"); return t ? t === "dark" : (window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches); }
+  function lab() { tb.textContent = isDark() ? "Light" : "Dark"; }
+  try { var sv = localStorage.getItem("fills-theme"); if (sv === "light" || sv === "dark") root.setAttribute("data-theme", sv); } catch (e) {}
+  lab();
+  tb.addEventListener("click", function () { var n = isDark() ? "light" : "dark"; root.setAttribute("data-theme", n); try { localStorage.setItem("fills-theme", n); } catch (e) {} lab(); draw(); });
+
+  var SLOT = {}, BLK = {}, FR = {};
+  DATA.slots.forEach(function (s) { SLOT[s.id] = s; });
+  DATA.blocks.forEach(function (b) { BLK[b.id] = b; });
+  DATA.frames_def.forEach(function (f) { FR[f.id] = f; });
+  var PILL = { own: "owns", ref: "&amp;", mut: "&amp;mut", val: "i32" };
+  var CAUSE = { borrow: "inserted borrow", deref: "inserted dereference", move: "move", copy: "copy", drop: "inserted drop", path: "resolved method call" };
+
+  function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+  function fmt(a) { return esc(a.slice(0, -4)) + "<b>" + esc(a.slice(-4)) + "</b>"; }
+  function addrOf(t) { var p = t.split(":"); return p[0] === "slot" ? SLOT[p[1]].addr : BLK[p[1]].addr; }
+  function hintOf(t) {
+    var p = t.split(":");
+    if (p[0] === "slot") return "slot of " + SLOT[p[1]].name;
+    if (p[0] === "block") return BLK[p[1]].name;
+    return BLK[p[1]].name + " .next";
+  }
+
+  function stateAt(k) {
+    var S = { slots: {}, blocks: {}, frames: {} };
+    DATA.slots.forEach(function (s) { S.slots[s.id] = { st: "empty" }; });
+    DATA.blocks.forEach(function (b) { S.blocks[b.id] = { st: "none", next: null, val: null }; });
+    DATA.frames_def.forEach(function (f) { S.frames[f.id] = "hidden"; });
+    for (var i = 0; i <= k; i++) DATA.frames[i].ops.forEach(function (o) {
+      if (o.op === "frame") S.frames[o.f] = o.st;
+      else if (o.op === "alloc") S.blocks[o.b] = { st: "live", next: o.next, val: o.val };
+      else if (o.op === "set") S.slots[o.s] = { st: "set", ptr: o.ptr || null, val: o.val, none: !!o.none };
+      else if (o.op === "sset") {
+        var c = S.slots[o.s]; if (c.st !== "set") c = { st: "set", next: null, val: null, nmoved: false };
+        if ("next" in o) c.next = o.next; if ("val" in o) c.val = o.val; S.slots[o.s] = c;
+      }
+      else if (o.op === "smoved") S.slots[o.s].nmoved = true;
+      else if (o.op === "moved" || o.op === "done" || o.op === "dropped") S.slots[o.s].st = o.op;
+      else if (o.op === "field") { if ("next" in o) S.blocks[o.b].next = o.next; if ("val" in o) S.blocks[o.b].val = o.val; }
+      else if (o.op === "free") S.blocks[o.b].st = "freed";
+    });
+    return S;
+  }
+
+  function valHTML(s, v) {
+    if (v.st === "empty") return "not set";
+    if (s.struct) {
+      var nx = v.next ? fmt(addrOf(v.next)) + '<span class="f-h">' + esc(hintOf(v.next)) + "</span>" : "None";
+      return '<span class="sf snext' + (v.nmoved ? " moved" : "") + '" data-t="snext:' + s.id + '"><span class="f-l">next</span><span class="sv">' + nx + "</span>" + (v.nmoved ? '<span class="tagx">moved out</span>' : "") + "</span>" +
+        '<span class="sf" data-t="sval:' + s.id + '"><span class="f-l">val</span>' + esc(v.val) + "</span>";
+    }
+    var inner, hint = "";
+    if (v.none) inner = 'None <span class="hint">0x0</span>';
+    else if (v.ptr) { inner = fmt(addrOf(v.ptr)); hint = '<span class="hint">' + esc(hintOf(v.ptr)) + "</span>"; }
+    else inner = esc(v.val);
+    var tag = { moved: "moved", done: "done", dropped: "dropped" }[v.st];
+    return '<span class="v">' + inner + "</span>" + (tag ? '<span class="tagx">' + tag + "</span>" : "") + hint;
+  }
+  function rowHTML(s, v) {
+    var val = valHTML(s, v);
+    return '<div class="row k-' + s.kind + " st-" + v.st + '" data-row="slot:' + s.id + '">' +
+      '<span class="r-addr">' + fmt(s.addr) + "</span>" +
+      '<span class="r-name k-' + s.kind + '">' + esc(s.name) + '<i class="pill">' + PILL[s.kind] + "</i></span>" +
+      '<span class="r-type k-' + s.kind + '">' + esc(s.type) + (s.struct ? ", 16 B" : "") + "</span>" +
+      '<span class="r-val' + (s.struct ? " struct" : "") + '"' + (s.struct ? "" : ' data-t="slot:' + s.id + '"') + ">" + val + "</span></div>";
+  }
+  function blkHTML(b, v) {
+    var next = v.next ? fmt(BLK[v.next].addr) + '<span class="f-h">' + esc(BLK[v.next].name) + "</span>" : 'None<span class="f-h">0x0</span>';
+    var head = v.st === "freed" ? "freed" : v.st === "none" ? "not allocated yet" : fmt(b.addr);
+    return '<div class="blk st-' + v.st + '" data-t="block:' + b.id + '">' +
+      '<div class="blk-head"><span class="blk-name">' + esc(b.name) + '</span><span class="blk-addr">' + head + "</span></div>" +
+      '<div class="cells"><div class="cell f-next" data-t="next:' + b.id + '"><span class="f-l">next, 8 B, owns what it points at</span><span class="f-v">' + next + "</span></div>" +
+      '<div class="cell f-val" data-t="val:' + b.id + '"><span class="f-l">val, 4 B</span><span class="f-v">' + esc(v.val === null ? "" : v.val) + "</span></div>" +
+      '<div class="cell f-pad" title="4 bytes of padding"><span class="f-l">padding, 4 B</span></div></div></div>';
+  }
+
+  var wLines = Array.prototype.slice.call(document.querySelectorAll("#wcode .cl"));
+  var eLines = Array.prototype.slice.call(document.querySelectorAll("#ecode .cl"));
+  var stackEl = document.getElementById("stack"), heapEl = document.getElementById("heap");
+  var memEl = document.getElementById("mem"), wireG = document.getElementById("wireG");
+  var capEl = document.getElementById("cap"), ledEl = document.getElementById("ledger"), countEl = document.getElementById("count"), nowEl = document.getElementById("now");
+  var backB = document.getElementById("back"), stepB = document.getElementById("step"), resetB = document.getElementById("reset");
+  var k = 0, cur = null;
+
+  function describe(t) {
+    var p = t.split(":"), id = p[1];
+    if (p[0] === "slot") return "<b>" + esc(SLOT[id].name) + "</b><small>stack, " + SLOT[id].size + " B</small>";
+    if (p[0] === "snext") return "<b>" + esc(SLOT[id].name) + ".next</b><small>stack, 8 B</small>";
+    if (p[0] === "sval") return "<b>" + esc(SLOT[id].name) + ".val</b><small>stack, 4 B</small>";
+    var nm = esc(BLK[id].name);
+    if (p[0] === "next") return nm + " .next<small>heap, 8 B</small>";
+    if (p[0] === "val") return nm + " .val<small>heap, 4 B</small>";
+    return nm + "<small>heap, 16 B</small>";
+  }
+  var OPW = { R: "read", W: "write", A: "allocate", F: "free", B: "address of", N: "drop, nothing to free:" };
+
+  function draw() {
+    var f = DATA.frames[k], S = stateAt(k);
+    cur = S;
+    eLines.forEach(function (el) { el.classList.toggle("on", Number(el.getAttribute("data-l")) === f.line); });
+    wLines.forEach(function (el) { el.classList.toggle("on", Number(el.getAttribute("data-l")) === f.wline); });
+    var le = eLines[f.line - 1];
+    nowEl.textContent = le ? le.textContent.replace(/^\s*\d+/, "").trim() : "";
+    var h = "";
+    DATA.frames_def.forEach(function (fd) {
+      var st = S.frames[fd.id];
+      if (st === "hidden") return;
+      h += '<div class="fgroup' + (st === "released" ? " released" : "") + '"><h3>frame of <code>' + esc(fd.name) + "</code>" + (st === "released" ? '<span class="st">popped, bytes left as they were</span>' : "") + '</h3><div class="rows">';
+      DATA.slots.forEach(function (s) { if (s.frame === fd.id) h += rowHTML(s, S.slots[s.id]); });
+      h += "</div></div>";
+    });
+    stackEl.innerHTML = h;
+    heapEl.innerHTML = DATA.blocks.map(function (b) { return blkHTML(b, S.blocks[b.id]); }).join("");
+    f.touch.forEach(function (t) { var el = memEl.querySelector('[data-t="' + t[1] + '"]'); if (el) el.classList.add("t-" + t[0]); });
+    capEl.innerHTML = f.cap;
+    ledEl.innerHTML = f.touch.map(function (t, i) {
+      var cz = t[2] ? '<span class="cz cz-' + t[2] + '" title="' + CAUSE[t[2]] + '"></span>' : "";
+      var extra = t[0] === "B" ? "<small>no memory touched</small>" : "";
+      return '<span class="chip ' + t[0] + (t[2] ? " cause" : "") + '"' + (t[2] ? ' title="caused by: ' + CAUSE[t[2]] + '"' : "") + ">" + cz + '<span class="seq">' + (i + 1) + '</span><span class="op">' + OPW[t[0]] + "</span>" + describe(t[1]) + extra + "</span>";
+    }).join("") || '<span class="chip"><span class="op">no memory touched</span></span>';
+    countEl.textContent = "Step " + (k + 1) + " of " + DATA.frames.length;
+    backB.disabled = k === 0;
+    stepB.disabled = k === DATA.frames.length - 1;
+    requestAnimationFrame(wires);
+  }
+
+  function box(el) {
+    var r = el.getBoundingClientRect(), m = memEl.getBoundingClientRect();
+    return { l: r.left - m.left, r: r.right - m.left, t: r.top - m.top, b: r.bottom - m.top, cy: (r.top + r.bottom) / 2 - m.top };
+  }
+  function targetEl(t) {
+    var p = t.split(":");
+    if (p[0] === "slot") return memEl.querySelector('[data-row="' + t + '"]');
+    if (p[0] === "block") return memEl.querySelector('[data-t="' + t + '"] .blk-head');
+    return memEl.querySelector('[data-t="' + t + '"]');
+  }
+  function path(d, kind) { return '<path class="w w-' + kind + '" d="' + d + '" marker-end="url(#mk-' + kind + ')"/>'; }
+  function wires() {
+    if (!cur) return;
+    var out = [], loopL = 0, loopR = 0, arrive = {};
+    function nudge(t) { arrive[t] = (arrive[t] || 0) + 1; return (arrive[t] - 1) * 6; }
+    function link(srcEl, rowEl, t, kind) {
+      var dEl = targetEl(t); if (!srcEl || !dEl) return;
+      var s = box(srcEl), d = box(dEl), dy = nudge(t);
+      if (t.indexOf("slot:") === 0) {
+        var sr = box(rowEl), x0 = sr.l - 3, y0 = sr.cy, x1 = d.l - 3, y1 = d.cy + dy - 3, off = 24 + 9 * loopL++;
+        out.push(path("M" + x0 + "," + y0 + " C" + (x0 - off) + "," + y0 + " " + (x1 - off) + "," + y1 + " " + x1 + "," + y1, kind));
+      } else if (d.l > s.r + 12) {
+        var ex = d.l - 2, ey = d.cy + dy - 3, mx = (s.r + ex) / 2;
+        out.push(path("M" + (s.r + 2) + "," + s.cy + " C" + mx + "," + s.cy + " " + mx + "," + ey + " " + ex + "," + ey, kind));
+      } else {
+        var rx = Math.max(s.r, d.r) + 22 + 9 * loopR++, ey2 = d.cy + dy - 3;
+        out.push(path("M" + (s.r + 2) + "," + s.cy + " C" + rx + "," + s.cy + " " + rx + "," + ey2 + " " + (d.r + 2) + "," + ey2, kind));
+      }
+    }
+    DATA.slots.forEach(function (s) {
+      if (cur.frames[s.frame] !== "live") return;
+      var v = cur.slots[s.id];
+      var row = memEl.querySelector('[data-row="slot:' + s.id + '"]');
+      if (!row) return;
+      if (s.struct) { if (v.st === "set" && v.next && !v.nmoved) link(row.querySelector(".snext"), row, v.next, "own"); }
+      else if (v.st === "set" && v.ptr) link(row.querySelector(".r-val"), row, v.ptr, s.kind);
+    });
+    DATA.blocks.forEach(function (b) {
+      var v = cur.blocks[b.id];
+      if (v.st === "live" && v.next) link(memEl.querySelector('[data-t="next:' + b.id + '"]'), null, "block:" + v.next, "own");
+    });
+    wireG.innerHTML = out.join("");
+  }
+
+  backB.addEventListener("click", function () { if (k > 0) { k--; draw(); } });
+  stepB.addEventListener("click", function () { if (k < DATA.frames.length - 1) { k++; draw(); } });
+  resetB.addEventListener("click", function () { k = 0; draw(); });
+  document.addEventListener("keydown", function (e) {
+    if (e.target && /input|textarea|select/i.test(e.target.tagName)) return;
+    if (e.key === "ArrowRight") { stepB.click(); e.preventDefault(); }
+    else if (e.key === "ArrowLeft") { backB.click(); e.preventDefault(); }
+    else if (e.key === "Home") { resetB.click(); e.preventDefault(); }
+  });
+  var rt; window.addEventListener("resize", function () { clearTimeout(rt); rt = setTimeout(wires, 80); });
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(wires);
+  draw();
+})();
+</script>
+</body>
+</html>

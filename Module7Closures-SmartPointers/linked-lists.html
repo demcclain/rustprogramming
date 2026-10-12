@@ -1,0 +1,2107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Linked Lists, One Key at a Time</title>
+<meta name="description" content="Singly linked lists in Rust built from Option<Box<ListNode>>: reading them, rearranging them, building them, and what each move costs the machine.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Saira+Stencil+One&family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,600;1,7..72,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #eef1f2;
+  --panel: #f7f9f9;
+  --ink: #1d252b;
+  --ink-soft: #46535c;
+  --steel: #4f6574;
+  --steel-pale: #d7e0e5;
+  --steel-faint: #e4eaed;
+  --brass: #8a7224;
+  --brass-pale: #efe6c4;
+  --hook: #8b98a3;
+  --felt: #2f6a52;
+  --cardboard: #9b7a4d;
+  --nope: #a2464b;
+  --code-bg: #e2e8eb;
+  --fact: #0f766e;
+  --judgment: #b45309;
+  --model: #6d28d9;
+  --hk: #5a3e94; --ht: #1d5c7a; --hv: #7a5a10; --hs: #2f6a52; --hn: #9a4a1c; --hc: #6f7d86; --hm: #8a2f5a; --hf: #2b4a5c; --ha: #6f7d86;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14191d; --panel: #1a2126; --ink: #e2e7ea; --ink-soft: #a9b6bf;
+    --steel: #8fa7b8; --steel-pale: #2a363f; --steel-faint: #20292f;
+    --brass: #d2b65c; --brass-pale: #3a3420; --hook: #6d7c88; --felt: #66b48f;
+    --cardboard: #c49b62; --nope: #e0787d; --code-bg: #1f272d;
+    --fact: #2dd4bf; --judgment: #f59e0b; --model: #b69cff;
+    --hk: #c3a6ff; --ht: #7cc4e4; --hv: #e3c46a; --hs: #8fd3ad; --hn: #f0a070; --hc: #7f8e98; --hm: #f08cba; --hf: #b8d4e6; --ha: #7f8e98;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #14191d; --panel: #1a2126; --ink: #e2e7ea; --ink-soft: #a9b6bf;
+  --steel: #8fa7b8; --steel-pale: #2a363f; --steel-faint: #20292f;
+  --brass: #d2b65c; --brass-pale: #3a3420; --hook: #6d7c88; --felt: #66b48f;
+  --cardboard: #c49b62; --nope: #e0787d; --code-bg: #1f272d;
+  --fact: #2dd4bf; --judgment: #f59e0b; --model: #b69cff;
+  --hk: #c3a6ff; --ht: #7cc4e4; --hv: #e3c46a; --hs: #8fd3ad; --hn: #f0a070; --hc: #7f8e98; --hm: #f08cba; --hf: #b8d4e6; --ha: #7f8e98;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } * { transition: none !important; } }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "Literata", Charter, "Bitstream Charter", Georgia, serif;
+  font-size: 1.06rem;
+  line-height: 1.72;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--steel); text-underline-offset: 3px; }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 16px;
+}
+@media (min-width: 1100px) {
+  .layout { grid-template-columns: 250px minmax(0, 1fr); column-gap: 56px; }
+}
+
+/* ---------- locker-door contents rail ---------- */
+.rail { display: none; }
+@media (min-width: 1100px) {
+  .rail {
+    display: block;
+    position: sticky;
+    top: 0;
+    align-self: start;
+    height: 100vh;
+    overflow-y: auto;
+    padding: 36px 0 24px;
+  }
+}
+.rail ol, .mobile-toc ol { list-style: none; margin: 0; padding: 0; }
+.rail li + li { margin-top: 3px; }
+.rail a, .mobile-toc a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  color: var(--ink-soft);
+  font-size: 0.86rem;
+  line-height: 1.25;
+  padding: 3px 4px;
+  border-radius: 4px;
+}
+.rail a:hover, .mobile-toc a:hover { color: var(--ink); background: var(--steel-faint); }
+.door {
+  flex: none;
+  position: relative;
+  width: 26px;
+  height: 34px;
+  border: 1.5px solid var(--steel);
+  border-radius: 3px;
+  background: var(--steel-pale);
+  font-family: "Saira Stencil One", "Arial Narrow", sans-serif;
+  font-size: 0.95rem;
+  color: var(--steel);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 2px;
+}
+.door::before, .door::after {
+  content: "";
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  height: 0;
+  border-top: 1.5px solid var(--steel);
+  opacity: 0.55;
+}
+.door::before { top: 5px; }
+.door::after { top: 9px; }
+.rail a.active { color: var(--ink); }
+.rail a.active .door { border-color: var(--brass); background: var(--brass-pale); color: var(--brass); }
+.rail a.active .door::before, .rail a.active .door::after { border-color: var(--brass); }
+
+.mobile-toc { margin: 8px 0 28px; border: 1px solid var(--steel-pale); border-radius: 6px; background: var(--panel); }
+.mobile-toc summary { cursor: pointer; padding: 10px 14px; color: var(--ink-soft); font-size: 0.95rem; }
+.mobile-toc ol { padding: 4px 10px 12px; }
+@media (min-width: 1100px) { .mobile-toc { display: none; } }
+
+/* ---------- main column ---------- */
+main { min-width: 0; max-width: 720px; padding: 40px 0 120px; }
+.theme-btn {
+  position: fixed; top: 12px; right: 12px; z-index: 5;
+  font: inherit; font-size: 0.82rem;
+  color: var(--ink-soft); background: var(--panel);
+  border: 1px solid var(--steel-pale); border-radius: 999px;
+  padding: 4px 12px; cursor: pointer;
+}
+.hero h1 {
+  font-family: "Saira Stencil One", "Arial Narrow", Impact, sans-serif;
+  font-weight: 400;
+  font-size: clamp(2.4rem, 7vw, 4.1rem);
+  line-height: 1.02;
+  letter-spacing: 0.01em;
+  color: var(--steel);
+  margin: 18px 0 14px;
+}
+.hero .lede { font-size: 1.2rem; line-height: 1.6; color: var(--ink-soft); margin: 0 0 8px; max-width: 34em; }
+
+section.chapter { padding-top: 56px; }
+.ch-head { display: flex; align-items: center; gap: 14px; margin-bottom: 6px; }
+.ch-head .door { width: 34px; height: 44px; font-size: 1.25rem; padding-bottom: 3px; }
+.ch-head .door::before { top: 7px; left: 8px; right: 8px; }
+.ch-head .door::after { top: 12px; left: 8px; right: 8px; }
+h2 { font-size: 1.75rem; line-height: 1.2; font-weight: 600; margin: 0; letter-spacing: -0.005em; }
+h3 { font-size: 1.18rem; line-height: 1.3; font-weight: 600; margin: 2.2em 0 0.5em; }
+p { margin: 0 0 1.05em; }
+main ul, main ol { padding-left: 1.3em; margin: 0 0 1.1em; }
+main li { margin: 0.25em 0; }
+strong { font-weight: 600; }
+.aside { font-size: 0.97rem; color: var(--ink-soft); }
+.short { font-size: 1.15rem; }
+
+code { font-family: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.86em; }
+:not(pre) > code { background: var(--code-bg); padding: 0.08em 0.32em; border-radius: 3px; overflow-wrap: anywhere; }
+pre.out { margin: 0 0 1.3em; padding: 10px 14px; border: 1px dashed var(--steel-pale); border-radius: 4px; overflow-x: auto; font-size: 0.84rem; line-height: 1.5; color: var(--ink-soft); }
+pre.out code { white-space: pre; }
+pre.code {
+  margin: 0 0 1.3em;
+  padding: 14px 16px;
+  background: var(--code-bg);
+  border-left: 3px solid var(--steel);
+  border-radius: 4px;
+  overflow-x: auto;
+  font-size: 0.93rem;
+  line-height: 1.55;
+  tab-size: 4;
+}
+pre.code code { font-size: 0.86rem; white-space: pre; }
+.hk { color: var(--hk); } .ht { color: var(--ht); } .hv { color: var(--hv); font-weight: 500; }
+.hs { color: var(--hs); } .hn { color: var(--hn); } .hc { color: var(--hc); font-style: italic; }
+.hm { color: var(--hm); } .hf { color: var(--hf); } .ha { color: var(--ha); }
+
+/* fact / judgment / model labels */
+.tag {
+  display: inline-block;
+  font-variant: small-caps;
+  font-size: 0.86em;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+  padding: 0 0.38em 0.08em;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  margin-right: 0.35em;
+  vertical-align: 0.06em;
+}
+.tag.fact { color: var(--fact); }
+.tag.judgment { color: var(--judgment); }
+.tag.model { color: var(--model); }
+
+/* won't-compile notes */
+.nope-note {
+  margin: 0.4em 0 1.5em;
+  padding: 2px 0 2px 16px;
+  border-left: 2px dashed var(--nope);
+}
+.nope-note .nope-head { font-size: 0.95rem; color: var(--nope); margin: 0 0 0.4em; font-style: italic; }
+.nope-note p { font-size: 0.98rem; }
+pre.code.nope-code { border-left-color: var(--nope); background: transparent; border: 1px dashed var(--steel-pale); border-left: 3px solid var(--nope); }
+
+/* diagrams */
+figure { margin: 1.4em 0 1.8em; }
+figure svg { display: block; width: 100%; height: auto; }
+figcaption { font-size: 0.9rem; color: var(--ink-soft); margin-top: 0.5em; }
+.d-locker { fill: var(--steel-pale); stroke: var(--steel); stroke-width: 2; }
+.d-vent { stroke: var(--steel); stroke-width: 2; opacity: 0.5; }
+.d-num { font-family: "Saira Stencil One", "Arial Narrow", sans-serif; fill: var(--steel); }
+.d-val { font-family: "IBM Plex Mono", ui-monospace, monospace; fill: var(--ink); font-weight: 500; }
+.d-text { font-family: "Literata", Georgia, serif; fill: var(--ink-soft); }
+.d-mono { font-family: "IBM Plex Mono", ui-monospace, monospace; fill: var(--ink); }
+.d-key { fill: var(--brass); }
+.d-keyline { stroke: var(--brass); stroke-width: 2; fill: none; }
+.d-hook { fill: none; stroke: var(--hook); stroke-width: 2; stroke-dasharray: 4 3; }
+.d-arrow { stroke: var(--steel); stroke-width: 2; fill: none; }
+.d-arrowhead { fill: var(--steel); }
+.d-box { fill: var(--panel); stroke: var(--steel); stroke-width: 1.5; }
+.d-region { fill: none; stroke: var(--steel-pale); stroke-width: 2; }
+.d-felt { fill: var(--felt); opacity: 0.14; }
+.d-nope { stroke: var(--nope); stroke-width: 2; fill: none; }
+.d-nopetext { fill: var(--nope); font-family: "Literata", Georgia, serif; }
+.d-hl { fill: none; stroke: var(--brass); stroke-width: 2.5; }
+.d-bar { fill: var(--steel); }
+.d-grid { stroke: var(--steel-pale); stroke-width: 1; }
+
+/* steppers */
+.stepper {
+  margin: 1.4em 0 1.9em;
+  border: 1px solid var(--steel-pale);
+  border-radius: 8px;
+  background: var(--panel);
+  overflow: hidden;
+}
+.stepper .st-code { margin: 0; border-radius: 0; border-left: 0; font-size: 0.86rem; padding: 10px 0; }
+.stepper .st-code code { display: block; }
+.stepper .st-line { display: block; padding: 0 14px; border-left: 3px solid transparent; }
+.stepper .st-line.on { background: var(--brass-pale); border-left-color: var(--brass); }
+.stepper .st-stage { padding: 14px 14px 4px; overflow-x: auto; }
+.stepper .st-row { display: flex; align-items: center; gap: 10px; min-height: 46px; margin-bottom: 6px; }
+.stepper .st-name { flex: none; width: 64px; text-align: right; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 0.85rem; color: var(--ink-soft); }
+.stepper .st-chain { display: flex; align-items: center; flex-wrap: nowrap; }
+.stepper .st-scalar { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 0.95rem; }
+.stepper .st-moved { font-style: italic; font-size: 0.88rem; color: var(--hook); }
+.peg {
+  position: relative;
+  flex: none;
+  width: 26px;
+  height: 2px;
+  background: var(--steel);
+  margin: 0 2px;
+}
+.peg::after {
+  content: "";
+  position: absolute; right: -2px; top: -4px;
+  border-left: 6px solid var(--steel);
+  border-top: 5px solid transparent; border-bottom: 5px solid transparent;
+}
+.peg.empty { width: auto; height: auto; background: none; margin: 0 4px; }
+.peg.empty::after { display: none; }
+.peg.empty span { display: inline-block; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 0.78rem; color: var(--hook); border: 1.5px dashed var(--hook); border-radius: 12px; padding: 1px 8px; }
+.peg.hole { width: auto; height: auto; background: none; margin: 0 4px; }
+.peg.hole::after { display: none; }
+.peg.hole span { display: inline-block; font-size: 0.78rem; color: var(--nope); border: 1.5px dashed var(--nope); border-radius: 12px; padding: 1px 8px; font-style: italic; }
+.peg.mark { outline: 2.5px solid var(--brass); outline-offset: 5px; border-radius: 4px; }
+.peg.empty.mark span, .peg.hole.mark span { outline: 2.5px solid var(--brass); outline-offset: 3px; }
+.peg .peg-tag, .lk .lk-tag {
+  position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+  font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 0.7rem; color: var(--brass); white-space: nowrap;
+}
+.lk {
+  position: relative;
+  flex: none;
+  min-width: 40px;
+  height: 40px;
+  padding: 0 8px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--steel);
+  border-radius: 4px;
+  background: var(--steel-pale);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-weight: 500;
+}
+.lk.dummy { border-style: dashed; border-color: var(--cardboard); background: transparent; color: var(--cardboard); }
+.lk.fresh { border-color: var(--brass); background: var(--brass-pale); }
+.lk.freed { opacity: 0.45; text-decoration: line-through; border-style: dotted; }
+.lk.mark { outline: 2.5px solid var(--brass); outline-offset: 3px; }
+.lk .lk-tag { top: 44px; }
+.stepper .st-caption { padding: 8px 14px 4px; min-height: 3.4em; font-size: 0.97rem; }
+.stepper .st-controls { display: flex; align-items: center; gap: 8px; padding: 6px 14px 14px; }
+.stepper button {
+  font: inherit; font-size: 0.9rem;
+  padding: 4px 14px;
+  border: 1px solid var(--steel);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+.stepper button.primary { background: var(--steel); color: var(--bg); }
+.stepper button:disabled { opacity: 0.4; cursor: default; }
+.stepper .st-count { margin-left: auto; font-size: 0.85rem; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.stepper .st-code { border-bottom: 1px solid var(--steel-pale); }
+
+/* tables */
+.table-wrap { overflow-x: auto; margin: 0.6em 0 1.6em; }
+table { border-collapse: collapse; width: 100%; font-size: 0.92rem; line-height: 1.45; }
+th, td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--steel-pale); }
+th { font-weight: 600; color: var(--ink-soft); border-bottom: 1.5px solid var(--steel); }
+td:first-child { font-weight: 600; }
+
+.end-note { margin-top: 64px; padding-top: 20px; border-top: 1px solid var(--steel-pale); font-size: 0.92rem; color: var(--ink-soft); }
+</style>
+</head>
+<body>
+<button class="theme-btn" type="button" id="themeBtn" aria-label="Switch light or dark theme">Dark</button>
+<div class="layout">
+<nav class="rail" aria-label="Contents">
+<ol>
+<li><a href="#s0"><span class="door">0</span>What we're working with</a></li>
+<li><a href="#s1"><span class="door">1</span>Keys and hooks</a></li>
+<li><a href="#s2"><span class="door">2</span>Looking</a></li>
+<li><a href="#s3"><span class="door">3</span>Clearing as you go</a></li>
+<li><a href="#s4"><span class="door">4</span>Dealing the deck</a></li>
+<li><a href="#s5"><span class="door">5</span>Building in order</a></li>
+<li><a href="#s6"><span class="door">6</span>Moving real lockers</a></li>
+<li><a href="#s7"><span class="door">7</span>Holding the hook</a></li>
+<li><a href="#s8"><span class="door">8</span>Cut and couple</a></li>
+<li><a href="#s9"><span class="door">9</span>Two fingers</a></li>
+<li><a href="#s10"><span class="door">10</span>Recursion</a></li>
+<li><a href="#s11"><span class="door">11</span>Lists inside other things</a></li>
+<li><a href="#s12"><span class="door">12</span>Costs you didn't write</a></li>
+<li><a href="#s13"><span class="door">13</span>When a list meets a tree</a></li>
+<li><a href="#s14"><span class="door">14</span>Past one owner</a></li>
+<li><a href="#s15"><span class="door">15</span>The ledger</a></li>
+</ol>
+</nav>
+<main>
+<header class="hero">
+<h1>Linked lists, one key at a time</h1>
+<p class="lede">A linked list is a row of lockers. Each locker holds a number and the only key to the next locker. This page is about holding those keys in Rust: looking at a list, taking it apart, building a new one, and knowing what every move costs the machine.</p>
+<details class="mobile-toc">
+<summary>Contents</summary>
+<ol>
+<li><a href="#s0"><span class="door">0</span>What we're working with</a></li>
+<li><a href="#s1"><span class="door">1</span>Keys and hooks</a></li>
+<li><a href="#s2"><span class="door">2</span>Looking</a></li>
+<li><a href="#s3"><span class="door">3</span>Clearing as you go</a></li>
+<li><a href="#s4"><span class="door">4</span>Dealing the deck</a></li>
+<li><a href="#s5"><span class="door">5</span>Building in order</a></li>
+<li><a href="#s6"><span class="door">6</span>Moving real lockers</a></li>
+<li><a href="#s7"><span class="door">7</span>Holding the hook</a></li>
+<li><a href="#s8"><span class="door">8</span>Cut and couple</a></li>
+<li><a href="#s9"><span class="door">9</span>Two fingers</a></li>
+<li><a href="#s10"><span class="door">10</span>Recursion</a></li>
+<li><a href="#s11"><span class="door">11</span>Lists inside other things</a></li>
+<li><a href="#s12"><span class="door">12</span>Costs you didn't write</a></li>
+<li><a href="#s13"><span class="door">13</span>When a list meets a tree</a></li>
+<li><a href="#s14"><span class="door">14</span>Past one owner</a></li>
+<li><a href="#s15"><span class="door">15</span>The ledger</a></li>
+</ol>
+</details>
+</header>
+
+<section class="chapter" id="s0">
+<div class="ch-head"><span class="door">0</span><h2>What we're working with</h2></div>
+
+<p>Every list on this page is made from one small struct. It is already written for you. You never type it yourself, you only use it:</p>
+
+<pre class="code"><code><span class="ha">#[derive(PartialEq, Eq, Clone, Debug)]</span>
+<span class="hk">pub</span> <span class="hk">struct</span> <span class="ht">ListNode</span> {
+    <span class="hk">pub</span> val: i32,
+    <span class="hk">pub</span> next: <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt;,
+}
+
+<span class="hk">impl</span> <span class="ht">ListNode</span> {
+    <span class="ha">#[inline]</span>
+    <span class="hk">fn</span> <span class="hf">new</span>(val: i32) -&gt; <span class="hk">Self</span> {
+        <span class="ht">ListNode</span> { next: <span class="hv">None</span>, val }
+    }
+}</code></pre>
+
+<p>Two fields. <code>val</code> is a number. <code>next</code> is where the rest of the list hangs. That type on <code>next</code>, <code>Option&lt;Box&lt;ListNode&gt;&gt;</code>, is what this whole page is about, so if it reads like noise right now, good, that's the right starting point. By the end it should read like a plain sentence.</p>
+
+<p>The <code>#[derive(...)]</code> line and the <code>impl</code> block get explained later (sections 12 and 11). For now you only need one thing from them: <code>ListNode::new(5)</code> makes a single node holding 5 with nothing after it.</p>
+
+<p>Now the picture that will carry us through. Imagine a row of lockers in a train station. Each locker holds two things, a number and the key to the next locker. The last locker holds a number and an empty key hook. You get handed exactly one key: the key to the first locker.</p>
+
+<figure>
+<svg viewBox="0 0 690 215" role="img" aria-labelledby="d0t">
+<title id="d0t">Four lockers holding 7, 2, 9 and 4. Each holds the key to the next one; the last hook is empty.</title>
+<defs><marker id="ah0" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-key"/></marker></defs>
+<text x="8" y="134" class="d-mono" font-size="15">head</text>
+<circle cx="58" cy="129" r="6" class="d-keyline"/>
+<path d="M64 129 L101 129" class="d-keyline" marker-end="url(#ah0)"/>
+<g>
+<rect x="105" y="30" width="110" height="145" rx="5" class="d-locker"/>
+<line x1="130" y1="46" x2="190" y2="46" class="d-vent"/><line x1="130" y1="53" x2="190" y2="53" class="d-vent"/>
+<text x="116" y="74" class="d-num" font-size="15">1</text>
+<text x="160" y="112" class="d-val" font-size="34" text-anchor="middle">7</text>
+<circle cx="117" cy="129" r="4" class="d-arrowhead"/>
+<circle cx="182" cy="152" r="6" class="d-keyline"/><path d="M188 152 L238 136" class="d-keyline" marker-end="url(#ah0)"/>
+</g>
+<g>
+<rect x="245" y="30" width="110" height="145" rx="5" class="d-locker"/>
+<line x1="270" y1="46" x2="330" y2="46" class="d-vent"/><line x1="270" y1="53" x2="330" y2="53" class="d-vent"/>
+<text x="256" y="74" class="d-num" font-size="15">2</text>
+<text x="300" y="112" class="d-val" font-size="34" text-anchor="middle">2</text>
+<circle cx="257" cy="134" r="4" class="d-arrowhead"/>
+<circle cx="322" cy="152" r="6" class="d-keyline"/><path d="M328 152 L378 136" class="d-keyline" marker-end="url(#ah0)"/>
+</g>
+<g>
+<rect x="385" y="30" width="110" height="145" rx="5" class="d-locker"/>
+<line x1="410" y1="46" x2="470" y2="46" class="d-vent"/><line x1="410" y1="53" x2="470" y2="53" class="d-vent"/>
+<text x="396" y="74" class="d-num" font-size="15">3</text>
+<text x="440" y="112" class="d-val" font-size="34" text-anchor="middle">9</text>
+<circle cx="397" cy="134" r="4" class="d-arrowhead"/>
+<circle cx="462" cy="152" r="6" class="d-keyline"/><path d="M468 152 L518 136" class="d-keyline" marker-end="url(#ah0)"/>
+</g>
+<g>
+<rect x="525" y="30" width="110" height="145" rx="5" class="d-locker"/>
+<line x1="550" y1="46" x2="610" y2="46" class="d-vent"/><line x1="550" y1="53" x2="610" y2="53" class="d-vent"/>
+<text x="536" y="74" class="d-num" font-size="15">4</text>
+<text x="580" y="112" class="d-val" font-size="34" text-anchor="middle">4</text>
+<circle cx="537" cy="134" r="4" class="d-arrowhead"/>
+<circle cx="602" cy="152" r="7" class="d-hook"/>
+</g>
+<text x="602" y="200" class="d-text" font-size="14" text-anchor="middle">empty hook</text>
+</svg>
+<figcaption>One key in your hand is the whole list. Open locker 1, find the key to locker 2, and so on until a hook is empty.</figcaption>
+</figure>
+
+<p>That one key really is the whole list. Open locker 1, find key 2, open locker 2, find key 3, keep going until a hook is empty.</p>
+
+<p>The row has one strict rule, and Rust enforces it every single time: <strong>each locker has exactly one key, and keys can't be copied.</strong> Hold on to that. Nearly every surprise later on comes from this rule. So does nearly every trick.</p>
+
+<p>Work with lists comes in three kinds.</p>
+<ul>
+<li><strong>Reading.</strong> Walk the row and pull out an answer: a number, a yes or no, a <code>Vec</code> of values. The lockers stay as they were.</li>
+<li><strong>Rearranging.</strong> Take the lockers you were handed and hang them in a new order, or throw some away. No new lockers.</li>
+<li><strong>Building.</strong> Rent new lockers and hand back the key to the first one.</li>
+</ul>
+<p>Real tasks mix these. The sections go in order, each one adding a little to what you can do, so section 6 assumes you've read 1 to 5.</p>
+</section>
+
+<section class="chapter" id="s1">
+<div class="ch-head"><span class="door">1</span><h2>Keys and hooks</h2></div>
+
+<p>Start with <code>Box</code>. When you write <code>Box::new(something)</code>, two things happen. The program asks the allocator (the part of the runtime that hands out heap memory) for a piece of memory big enough for <code>something</code>, and moves <code>something</code> into it. What you get back is small: the address of that piece of memory.</p>
+
+<p>A <code>Box</code> is that address plus a promise. The promise is ownership: the box is the one and only owner of what it points at, and when the box goes away the memory goes back to the allocator automatically. You never free anything by hand.</p>
+
+<p>In locker language, <code>Box::new</code> rents a locker, puts your thing inside, and gives you the key.</p>
+
+<p>Next, the last locker's hook, which has to say "nothing here." Rust has no null pointer you can trip over by accident. It has <code>Option</code>, which is either <code>Some(x)</code>, meaning there is an x, or <code>None</code>, meaning there isn't. So:</p>
+
+<p class="short"><code>Option&lt;Box&lt;ListNode&gt;&gt;</code> &nbsp;reads as&nbsp; <em>maybe a key to a locker that holds a ListNode.</em></p>
+
+<p>That's a hook. It has a key on it, or it's empty. Every <code>next</code> field is a hook, and so is the variable that holds the start of a list.</p>
+
+<p>How much does the "maybe" cost? Run this and see:</p>
+
+<pre class="code"><code><span class="hm">println!</span>(<span class="hs">"{}"</span>, std::mem::size_of::&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt;()); <span class="hc">// 8</span>
+<span class="hm">println!</span>(<span class="hs">"{}"</span>, std::mem::size_of::&lt;<span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt;&gt;()); <span class="hc">// 8</span>
+<span class="hm">println!</span>(<span class="hs">"{}"</span>, std::mem::size_of::&lt;<span class="ht">ListNode</span>&gt;()); <span class="hc">// 16</span></code></pre>
+
+<p><span class="tag fact">fact</span>On a 64-bit machine that prints 8, 8 and 16. A <code>Box</code> is 8 bytes because an address is 8 bytes. The <code>Option</code> wrapped around it is also 8 bytes, because Rust guarantees that <code>None</code> is stored as address zero, which no real box can ever have. An empty hook weighs exactly as much as a hook with a key on it. The node is 16 bytes: 4 for the number, 8 for <code>next</code>, and 4 bytes of padding that round the node up to a multiple of 8, because it contains an 8-byte address.</p>
+
+<figure>
+<svg viewBox="0 0 690 270" role="img" aria-labelledby="d1t">
+<title id="d1t">The list variable is 8 bytes on the stack. It holds the address of the first node on the heap. Each node is a value and a next address; the last next is zero.</title>
+<defs><marker id="ah1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+<rect x="12" y="34" width="180" height="214" rx="6" class="d-region"/>
+<text x="24" y="58" class="d-text" font-size="14">stack (this function)</text>
+<text x="40" y="118" class="d-mono" font-size="14">list</text>
+<rect x="40" y="126" width="128" height="40" rx="3" class="d-box"/>
+<text x="104" y="151" class="d-mono" font-size="13" text-anchor="middle">address</text>
+<text x="40" y="186" class="d-text" font-size="13">8 bytes</text>
+<rect x="214" y="14" width="464" height="246" rx="6" class="d-region"/>
+<text x="228" y="38" class="d-text" font-size="14">heap (wherever the allocator found room)</text>
+<rect x="246" y="66" width="52" height="40" class="d-box"/><text x="272" y="91" class="d-val" font-size="16" text-anchor="middle">1</text>
+<rect x="298" y="66" width="92" height="40" class="d-box"/><text x="344" y="91" class="d-mono" font-size="12" text-anchor="middle">address</text>
+<text x="246" y="124" class="d-text" font-size="12">val</text><text x="300" y="124" class="d-text" font-size="12">next</text>
+<rect x="470" y="186" width="52" height="40" class="d-box"/><text x="496" y="211" class="d-val" font-size="16" text-anchor="middle">2</text>
+<rect x="522" y="186" width="92" height="40" class="d-box"/><text x="568" y="211" class="d-mono" font-size="12" text-anchor="middle">address</text>
+<rect x="452" y="66" width="52" height="40" class="d-box"/><text x="478" y="91" class="d-val" font-size="16" text-anchor="middle">3</text>
+<rect x="504" y="66" width="92" height="40" class="d-box"/><text x="550" y="91" class="d-mono" font-size="13" text-anchor="middle">0</text>
+<text x="604" y="91" class="d-text" font-size="12">None</text>
+<path d="M168 146 C 205 146, 215 86, 244 86" class="d-arrow" marker-end="url(#ah1)"/>
+<path d="M370 106 C 380 160, 430 206, 468 206" class="d-arrow" marker-end="url(#ah1)"/>
+<path d="M600 186 C 610 150, 500 140, 478 108" class="d-arrow" marker-end="url(#ah1)"/>
+<text x="246" y="160" class="d-text" font-size="12">one node: 16 bytes</text>
+</svg>
+<figcaption>The list variable is one 8-byte address. Nodes sit wherever the allocator put them, not side by side, and each one names the next by address. Zero means None.</figcaption>
+</figure>
+
+<h3>Building one by hand</h3>
+
+<p>Here's a three-node list written out in full:</p>
+
+<pre class="code"><code><span class="hk">let</span> list = <span class="hv">Some</span>(<span class="ht">Box</span>::<span class="hf">new</span>(<span class="ht">ListNode</span> {
+    val: <span class="hn">1</span>,
+    next: <span class="hv">Some</span>(<span class="ht">Box</span>::<span class="hf">new</span>(<span class="ht">ListNode</span> {
+        val: <span class="hn">2</span>,
+        next: <span class="hv">Some</span>(<span class="ht">Box</span>::<span class="hf">new</span>(<span class="ht">ListNode</span>::<span class="hf">new</span>(<span class="hn">3</span>))),
+    })),
+}));</code></pre>
+
+<p>Read it from the inside out, the same way you read the type. The innermost <code>Box::new(ListNode::new(3))</code> makes the last locker. That box goes into the <code>next</code> of node 2, wrapped in <code>Some</code> to say "a key is on this hook." Node 2 gets boxed and goes into the <code>next</code> of node 1. <code>ListNode { val: 1, next: ... }</code> is struct literal syntax: name every field, give each a value.</p>
+
+<p>Nobody writes long lists like that. The same list, one step at a time:</p>
+
+<pre class="code"><code><span class="hk">let</span> <span class="hk">mut</span> a = <span class="ht">Box</span>::<span class="hf">new</span>(<span class="ht">ListNode</span>::<span class="hf">new</span>(<span class="hn">1</span>));
+<span class="hk">let</span> <span class="hk">mut</span> b = <span class="ht">Box</span>::<span class="hf">new</span>(<span class="ht">ListNode</span>::<span class="hf">new</span>(<span class="hn">2</span>));
+<span class="hk">let</span> c = <span class="ht">Box</span>::<span class="hf">new</span>(<span class="ht">ListNode</span>::<span class="hf">new</span>(<span class="hn">3</span>));
+b.next = <span class="hv">Some</span>(c); <span class="hc">// c now hangs inside b</span>
+a.next = <span class="hv">Some</span>(b); <span class="hc">// b, carrying c, now hangs inside a</span>
+<span class="hk">let</span> list = <span class="hv">Some</span>(a);</code></pre>
+
+<p>Look at the order. After <code>b.next = Some(c);</code> the variable <code>c</code> is done. Its key moved into b's locker, and <code>c</code> can't be used again. Same for <code>b</code> after the following line. That's a <em>move</em>: ownership changed hands, and nothing got copied except an 8-byte address.</p>
+
+<div class="nope-note">
+<p class="nope-head">The other order doesn't compile</p>
+<pre class="code nope-code"><code>a.next = <span class="hv">Some</span>(b); <span class="hc">// b moves into a</span>
+b.next = <span class="hv">Some</span>(c); <span class="hc">// b is not yours anymore</span></code></pre>
+<p>Once b's key is inside a's locker, writing into <code>b</code> means reaching into a locker you no longer hold the key to. Rust refuses.</p>
+</div>
+
+<p>And the smallest list of all:</p>
+
+<pre class="code"><code><span class="hk">let</span> empty: <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt; = <span class="hv">None</span>;</code></pre>
+
+<p>An empty list is an empty hook. Every function in this page has to work when it's handed one of these, which is easy to forget and a common reason code crashes on the simplest input.</p>
+</section>
+
+<section class="chapter" id="s2">
+<div class="ch-head"><span class="door">2</span><h2>Looking</h2></div>
+
+<p>Most of the time you want an answer out of a list and the list itself should stay exactly as it was. You don't want to open any lockers. You want to walk down the row with a flashlight and read the numbers through the little windows.</p>
+
+<p>Rust's word for looking is a <em>shared reference</em>, written <code>&amp;</code>. If <code>head</code> is a list, <code>&amp;head</code> lets you see it without owning it. Any number of lookers can exist at once. None of them can change a thing. Underneath, a reference is also just an address, 8 bytes.</p>
+
+<pre class="code"><code><span class="hk">fn</span> <span class="hf">length</span>(head: &amp;<span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt;) -&gt; usize {
+    <span class="hk">let</span> <span class="hk">mut</span> count = <span class="hn">0</span>;
+    <span class="hk">let</span> <span class="hk">mut</span> cur = head;
+    <span class="hk">while</span> <span class="hk">let</span> <span class="hv">Some</span>(node) = cur {
+        count += <span class="hn">1</span>;
+        cur = &amp;node.next;
+    }
+    count
+}</code></pre>
+
+<p>Take it a line at a time.</p>
+<ul>
+<li><code>cur</code> starts as a look at the first hook.</li>
+<li><code>while let Some(node) = cur</code> means: as long as the hook <code>cur</code> is looking at has a key on it, call the locker <code>node</code> and run the body. Once the hook is empty, the pattern <code>Some(node)</code> doesn't match and the loop ends.</li>
+<li>Inside, <code>node</code> is a look at a box. You write <code>node.val</code> and Rust follows the box to the locker for you.</li>
+<li><code>cur = &amp;node.next;</code> moves your flashlight one hook down.</li>
+</ul>
+
+<figure>
+<svg viewBox="0 0 690 150" role="img" aria-labelledby="d2t">
+<title id="d2t">The cursor cur looks at each hook in turn: the head hook, then each node's next, and finally the empty hook where the loop stops.</title>
+<defs><marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+<text x="10" y="64" class="d-mono" font-size="14">head</text>
+<path d="M54 59 L104 59" class="d-arrow" marker-end="url(#ah2)"/>
+<rect x="108" y="38" width="62" height="42" rx="4" class="d-locker"/><text x="139" y="65" class="d-val" font-size="17" text-anchor="middle">5</text>
+<path d="M170 59 L230 59" class="d-arrow" marker-end="url(#ah2)"/>
+<rect x="234" y="38" width="62" height="42" rx="4" class="d-locker"/><text x="265" y="65" class="d-val" font-size="17" text-anchor="middle">8</text>
+<path d="M296 59 L356 59" class="d-arrow" marker-end="url(#ah2)"/>
+<rect x="360" y="38" width="62" height="42" rx="4" class="d-locker"/><text x="391" y="65" class="d-val" font-size="17" text-anchor="middle">1</text>
+<path d="M422 59 L482 59" class="d-arrow" marker-end="url(#ah2)"/>
+<rect x="488" y="45" width="58" height="28" rx="14" class="d-hook"/><text x="517" y="64" class="d-mono" font-size="12" text-anchor="middle" fill="currentColor">None</text>
+<g class="d-text" font-size="12">
+<path d="M78 70 L78 100" class="d-hl"/><text x="78" y="118" text-anchor="middle" class="d-mono" font-size="12">cur</text><text x="78" y="136" text-anchor="middle">pass 1</text>
+<path d="M200 70 L200 100" class="d-hl"/><text x="200" y="118" text-anchor="middle" class="d-mono" font-size="12">cur</text><text x="200" y="136" text-anchor="middle">pass 2</text>
+<path d="M326 70 L326 100" class="d-hl"/><text x="326" y="118" text-anchor="middle" class="d-mono" font-size="12">cur</text><text x="326" y="136" text-anchor="middle">pass 3</text>
+<path d="M452 70 L452 100" class="d-hl"/><text x="452" y="118" text-anchor="middle" class="d-mono" font-size="12">cur</text><text x="452" y="136" text-anchor="middle">pass 4</text>
+<text x="600" y="118" class="d-text" font-size="12" text-anchor="middle">empty hook,</text><text x="600" y="136" class="d-text" font-size="12" text-anchor="middle">loop ends</text>
+</g>
+</svg>
+<figcaption><code>cur</code> always looks at a hook. Three lockers, so the body runs three times, and the fourth look finds an empty hook.</figcaption>
+</figure>
+
+<p>That loop shape is the single most common thing on this page. Type it from memory a few times, until your fingers know it without you.</p>
+
+<h3>When the list arrives by value</h3>
+
+<p>Plenty of functions receive the list itself, not a reference. You own it. You can still just look:</p>
+
+<pre class="code"><code><span class="hk">fn</span> <span class="hf">digits_value</span>(head: <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt;) -&gt; i64 {
+    <span class="hk">let</span> <span class="hk">mut</span> value = <span class="hn">0</span>;
+    <span class="hk">let</span> <span class="hk">mut</span> cur = &amp;head;
+    <span class="hk">while</span> <span class="hk">let</span> <span class="hv">Some</span>(node) = cur {
+        value = value * <span class="hn">10</span> + node.val <span class="hk">as</span> i64;
+        cur = &amp;node.next;
+    }
+    value
+}</code></pre>
+
+<p><code>let mut cur = &amp;head;</code> and the rest is identical. When the function ends, <code>head</code> goes out of scope and the whole list is freed, which is fine, nobody needed it. (<code>node.val as i64</code> converts the 32-bit number to 64 bits so a long run of digits doesn't overflow.)</p>
+
+<h3>Remembering the one before</h3>
+
+<p>Lots of questions compare a node with its neighbour. But a locker has no idea who comes before it. Nothing in the row points backwards. So you carry the previous value yourself, in an ordinary variable:</p>
+
+<pre class="code"><code><span class="hk">fn</span> <span class="hf">count_rises</span>(head: &amp;<span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt;) -&gt; i32 {
+    <span class="hk">let</span> <span class="hk">mut</span> rises = <span class="hn">0</span>;
+    <span class="hk">let</span> <span class="hk">mut</span> prev = <span class="hn">0</span>;
+    <span class="hk">let</span> <span class="hk">mut</span> first = <span class="hk">true</span>;
+    <span class="hk">let</span> <span class="hk">mut</span> cur = head;
+    <span class="hk">while</span> <span class="hk">let</span> <span class="hv">Some</span>(node) = cur {
+        <span class="hk">if</span> !first &amp;&amp; node.val &gt; prev {
+            rises += <span class="hn">1</span>;
+        }
+        prev = node.val;
+        first = <span class="hk">false</span>;
+        cur = &amp;node.next;
+    }
+    rises
+}</code></pre>
+
+<p>The <code>first</code> flag stops the very first node from being compared against a made-up previous value. You could look ahead at <code>node.next</code> instead of carrying the past around, and that works too, but every look ahead means checking whether the next hook is empty. Carrying the previous value is usually less typing.</p>
+
+<h3>Copying the numbers out</h3>
+
+<p>Some questions are the wrong shape for a list. "What's the third value from the end?" A list only walks forwards, and it doesn't know its own length. A <code>Vec</code> lets you jump to any position. So copy the numbers into one:</p>
+
+<pre class="code"><code><span class="hk">fn</span> <span class="hf">to_vec</span>(head: &amp;<span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt;) -&gt; <span class="ht">Vec</span>&lt;i32&gt; {
+    <span class="hk">let</span> <span class="hk">mut</span> values = <span class="ht">Vec</span>::<span class="hf">new</span>();
+    <span class="hk">let</span> <span class="hk">mut</span> cur = head;
+    <span class="hk">while</span> <span class="hk">let</span> <span class="hv">Some</span>(node) = cur {
+        values.<span class="hf">push</span>(node.val);
+        cur = &amp;node.next;
+    }
+    values
+}</code></pre>
+
+<pre class="code"><code><span class="hk">fn</span> <span class="hf">kth_from_end</span>(head: &amp;<span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt;, k: usize) -&gt; i32 {
+    <span class="hk">let</span> values = <span class="hf">to_vec</span>(head);
+    values[values.<span class="hf">len</span>() - k]
+}</code></pre>
+
+<p><span class="tag judgment">judgment</span>This costs one walk and one <code>i32</code> per node of extra memory. What you buy is random access: <code>values[i]</code> for any <code>i</code>, both ends at once, sorting, the lot. When memory isn't the constraint it's often the clearest code you can write. When a task insists on working in place with constant extra memory, it's off the table, and that's what most of the rest of this page is for. Section 9 shows there's a speed side to this as well.</p>
+
+<div class="nope-note">
+<p class="nope-head">Looking means looking</p>
+<pre class="code nope-code"><code><span class="hk">let</span> rest = node.next; <span class="hc">// node is only on loan</span></code></pre>
+<p>Inside a looking walk, <code>node</code> is on loan. You can look at <code>node.next</code> (that's <code>&amp;node.next</code>), but carrying it off would mean taking a key out of a locker you're only allowed to peer into.</p>
+</div>
+</section>
+
+<section class="chapter" id="s3">
+<div class="ch-head"><span class="door">3</span><h2>Clearing as you go</h2></div>
+
+<p>Now open the lockers. If a function owns the list and won't need it afterwards, it can walk by moving instead of looking:</p>
+
+<pre class="code"><code><span class="hk">fn</span> <span class="hf">digits_value</span>(head: <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt;) -&gt; i64 {
+    <span class="hk">let</span> <span class="hk">mut</span> value = <span class="hn">0</span>;
+    <span class="hk">let</span> <span class="hk">mut</span> cur = head;
+    <span class="hk">while</span> <span class="hk">let</span> <span class="hv">Some</span>(node) = cur {
+        value = value * <span class="hn">10</span> + node.val <span class="hk">as</span> i64;
+        cur = node.next;
+    }
+    value
+}</code></pre>
+
+<p>Put it beside the version from the previous section. The only difference is a missing <code>&amp;</code>. One character, and the meaning changes completely:</p>
+<ul>
+<li><code>cur</code> is the hook itself now, not a look at a hook.</li>
+<li><code>node</code> is the box itself. You own it.</li>
+<li><code>cur = node.next</code> takes the key out of node's locker and puts it in <code>cur</code>.</li>
+</ul>
+
+<p>At the end of each pass, <code>node</code> goes out of scope, and what's left of it (the number, plus an empty spot where the key was) gets freed right there. The list disappears behind you as you walk. Open locker 1, pocket key 2, hand locker 1 back at the desk, walk on.</p>
+
+<p><span class="tag fact">fact</span>Pulling a field out of the thing a <code>Box</code> points at, like <code>node.next</code> here, is something <code>Box</code> allows and most other pointer types in Rust do not. This page leans on that a lot. Each move shifts 8 bytes; nothing gets copied.</p>
+
+<p>There's a price, of course. When you're done, the list is gone.</p>
+
+<div class="nope-note">
+<p class="nope-head">Using it afterwards doesn't compile</p>
+<pre class="code nope-code"><code><span class="hk">let</span> value = <span class="hf">digits_value</span>(head); <span class="hc">// head handed over by value</span>
+<span class="hm">println!</span>(<span class="hs">"{:?}"</span>, head); <span class="hc">// nothing left to print</span></code></pre>
+<p>The keys were handed over. There's nothing left in <code>head</code> to print.</p>
+</div>
+
+<p>So why consume at all, when looking works? Because rearranging needs nodes in hand. You can only re-hang a locker you hold the key to. Sections 4 through 8 are all built on this walk.</p>
+
+<h3>Two rows at once</h3>
+
+<p>Walking two lists side by side, until both run out, uses two new small pieces:</p>
+
+<pre class="code"><code><span class="hk">fn</span> <span class="hf">total_of_both</span>(l1: <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt;, l2: <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt;) -&gt; i32 {
+    <span class="hk">let</span> <span class="hk">mut</span> total = <span class="hn">0</span>;
+    <span class="hk">let</span> <span class="hk">mut</span> a = l1;
+    <span class="hk">let</span> <span class="hk">mut</span> b = l2;
+    <span class="hk">while</span> a.<span class="hf">is_some</span>() || b.<span class="hf">is_some</span>() {
+        <span class="hk">if</span> <span class="hk">let</span> <span class="hv">Some</span>(node) = a {
+            total += node.val;
+            a = node.next;
+        }
+        <span class="hk">if</span> <span class="hk">let</span> <span class="hv">Some</span>(node) = b {
+            total += node.val;
+            b = node.next;
+        }
+    }
+    total
+}</code></pre>
+
+<p><code>a.is_some()</code> asks whether there's a key on hook <code>a</code> without touching anything. <code>if let</code> is <code>while let</code> that runs at most once.</p>
+
+<p>The interesting line is <code>if let Some(node) = a</code>. If <code>a</code> has a key, the pattern moves it into <code>node</code>. For a moment <code>a</code> holds nothing usable at all, not even <code>None</code>, and two lines later it gets a fresh value, <code>node.next</code>. If <code>a</code> was already empty, the pattern doesn't match and nothing moves at all. Rust follows both possibilities and is happy that <code>a</code> is usable again by the next check.</p>
+
+<p>That loop is a skeleton. Anything that combines two lists position by position, digit by digit, hangs off it.</p>
+</section>
+
+<section class="chapter" id="s4">
+<div class="ch-head"><span class="door">4</span><h2>Dealing the deck</h2></div>
+
+<p>The cheapest change you can make to a list is putting a new locker at the front. Make a node whose <code>next</code> is the old list, box it, and that box is the new head:</p>
+
+<pre class="code"><code><span class="hk">fn</span> <span class="hf">push_front</span>(head: <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt;, val: i32) -&gt; <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt; {
+    <span class="hv">Some</span>(<span class="ht">Box</span>::<span class="hf">new</span>(<span class="ht">ListNode</span> { val, next: head }))
+}</code></pre>
+
+<p>No walking at all, however long the list is. (<code>ListNode { val, next: head }</code> uses a shorthand: when a variable has the same name as the field, <code>val</code> means <code>val: val</code>.)</p>
+
+<p>Because each new value lands in front, building a list from a <code>Vec</code> this way means going through the <code>Vec</code> backwards:</p>
+
+<pre class="code"><code><span class="hk">fn</span> <span class="hf">from_values</span>(values: &amp;<span class="ht">Vec</span>&lt;i32&gt;) -&gt; <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt; {
+    <span class="hk">let</span> <span class="hk">mut</span> head = <span class="hv">None</span>;
+    <span class="hk">let</span> <span class="hk">mut</span> i = values.<span class="hf">len</span>();
+    <span class="hk">while</span> i &gt; <span class="hn">0</span> {
+        i -= <span class="hn">1</span>;
+        head = <span class="hv">Some</span>(<span class="ht">Box</span>::<span class="hf">new</span>(<span class="ht">ListNode</span> {
+            val: values[i],
+            next: head,
+        }));
+    }
+    head
+}</code></pre>
+
+<h3>Reversing</h3>
+
+<p>Take a deck of cards face up and deal them one at a time onto a new pile. The new pile is the old deck backwards. You didn't print a single new card. You only moved them.</p>
+
+<p>Reversing a list is exactly that. Step through it:</p>
+
+<div class="stepper" data-algo="reverse" data-input="1,2,3,4"><pre class="code"><code><span class="hk">fn</span> <span class="hf">reverse</span>(head: <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt;) -&gt; <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt; {
+    <span class="hk">let</span> <span class="hk">mut</span> prev = <span class="hv">None</span>;
+    <span class="hk">let</span> <span class="hk">mut</span> cur = head;
+    <span class="hk">while</span> <span class="hk">let</span> <span class="hv">Some</span>(<span class="hk">mut</span> node) = cur {
+        cur = node.next;
+        node.next = prev;
+        prev = <span class="hv">Some</span>(node);
+    }
+    prev
+}</code></pre></div>
+
+<p>Three lines in the loop, always in this order:</p>
+<ol>
+<li><code>cur = node.next;</code> pocket the rest of the deck,</li>
+<li><code>node.next = prev;</code> point this card at the pile,</li>
+<li><code>prev = Some(node);</code> and now it's the top of the pile.</li>
+</ol>
+<p><code>Some(mut node)</code> needs the <code>mut</code> because line 2 changes the node.</p>
+
+<p>Between lines 1 and 2, <code>node</code> has a hole in it. Its <code>next</code> was moved out and nothing is there yet. Rust tracks holes like that, and allows them as long as the hole is filled before the node is used as a whole again. Line 2 fills it. Section 6 shows what happens when it isn't filled.</p>
+
+<p><span class="tag fact">fact</span>Reversing 1000 nodes this way, measured with an allocation counter: zero allocations, zero frees. Every locker stays exactly where it is in memory. Only keys move, 8 bytes at a time.</p>
+
+<h3>Reverse, work, and let prepending undo it</h3>
+
+<p>Numbers stored with the biggest digit first are awkward. Carries travel right to left, and the list only goes left to right. Reverse first, and the smallest digit is at the front. Then build the answer by prepending, and the order comes back on its own:</p>
+
+<pre class="code"><code><span class="hk">fn</span> <span class="hf">plus_one</span>(head: <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt;) -&gt; <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt; {
+    <span class="hk">let</span> <span class="hk">mut</span> cur = <span class="hf">reverse</span>(head); <span class="hc">// smallest digit first now</span>
+    <span class="hk">let</span> <span class="hk">mut</span> result = <span class="hv">None</span>;
+    <span class="hk">let</span> <span class="hk">mut</span> carry = <span class="hn">1</span>;
+    <span class="hk">while</span> <span class="hk">let</span> <span class="hv">Some</span>(<span class="hk">mut</span> node) = cur {
+        cur = node.next;
+        <span class="hk">let</span> d = node.val + carry;
+        node.val = d % <span class="hn">10</span>;
+        carry = d / <span class="hn">10</span>;
+        node.next = result; <span class="hc">// prepending puts the order back</span>
+        result = <span class="hv">Some</span>(node);
+    }
+    <span class="hk">if</span> carry &gt; <span class="hn">0</span> {
+        result = <span class="hv">Some</span>(<span class="ht">Box</span>::<span class="hf">new</span>(<span class="ht">ListNode</span> {
+            val: carry,
+            next: result,
+        }));
+    }
+    result
+}</code></pre>
+
+<p>This is reversal with two extra lines in the middle. It reuses every node; the only allocation happens when the number grows a digit (99 becomes 100).</p>
+
+<p><span class="tag judgment">judgment</span>"Reverse, do the work, prepend" handles a whole family of tasks: anything where a node's fate depends on what's to its right. Walk from the right end, carry what you need (a carry digit, a running maximum, a count) and prepend whatever survives. You get the answer in original order without a second reversal.</p>
+</section>
+
+<section class="chapter" id="s5">
+<div class="ch-head"><span class="door">5</span><h2>Building in order</h2></div>
+
+<p>Prepending builds backwards. Often you want the output in order. One plan: prepend everything, then reverse at the end. That's honestly fine, one more pass and no extra memory. The other plan is to keep a thumb on the last locker, so the next one can always go on its hook.</p>
+
+<p>That thumb needs a new kind of reference. <code>&amp;</code> only lets you look. <code>&amp;mut</code> lets you change what it points at. The rule for <code>&amp;mut</code> is strict: while a <code>&amp;mut</code> loan is alive, it's the only way in. No other lookers, no other changers. One person in the locker room, with the door shut.</p>
+
+<p>There's one annoyance. The first locker has nothing before it to hang on, so the first append would need its own special code. The usual way out is a small cheat: a cardboard locker zero. Make a throwaway node, hang everything after it, and at the end return what hangs after the cardboard.</p>
+
+<div class="stepper" data-algo="squares" data-input="3"><pre class="code"><code><span class="hk">fn</span> <span class="hf">squares</span>(n: i32) -&gt; <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt; {
+    <span class="hk">let</span> <span class="hk">mut</span> dummy = <span class="ht">ListNode</span>::<span class="hf">new</span>(<span class="hn">0</span>);
+    <span class="hk">let</span> <span class="hk">mut</span> tail = &amp;<span class="hk">mut</span> dummy;
+    <span class="hk">let</span> <span class="hk">mut</span> i = <span class="hn">1</span>;
+    <span class="hk">while</span> i &lt;= n {
+        tail.next = <span class="hv">Some</span>(<span class="ht">Box</span>::<span class="hf">new</span>(<span class="ht">ListNode</span>::<span class="hf">new</span>(i * i)));
+        tail = tail.next.<span class="hf">as_mut</span>().<span class="hf">unwrap</span>();
+        i += <span class="hn">1</span>;
+    }
+    dummy.next
+}</code></pre></div>
+
+<p>The new piece is <code>tail.next.as_mut().unwrap()</code>. Read it right to left from the hook:</p>
+<ul>
+<li><code>tail.next</code> is a hook.</li>
+<li><code>.as_mut()</code> turns "the hook" into "maybe a changeable look at the locker on that hook", an <code>Option&lt;&amp;mut Box&lt;ListNode&gt;&gt;</code>.</li>
+<li><code>.unwrap()</code> says: there's definitely something there, hand it over. If the hook turns out to be empty, the program stops on the spot with a panic.</li>
+</ul>
+<p>Here it can't be empty. You hung a locker on that exact hook one line earlier.</p>
+
+<h3>Where the cardboard lives</h3>
+
+<p>The dummy above is a plain <code>ListNode</code> sitting in the function's stack frame. You'll often see it on the heap instead:</p>
+
+<pre class="code"><code><span class="hk">let</span> <span class="hk">mut</span> dummy = <span class="ht">Box</span>::<span class="hf">new</span>(<span class="ht">ListNode</span>::<span class="hf">new</span>(<span class="hn">0</span>)); <span class="hc">// dummy on the heap</span>
+<span class="hk">let</span> <span class="hk">mut</span> tail = &amp;<span class="hk">mut</span> dummy;</code></pre>
+
+<p>That works the same way. It costs one allocation for a node that gets thrown away, which is tiny, but the stack version costs nothing. (In the stack version <code>tail</code> is a <code>&amp;mut ListNode</code>, and assigning it a <code>&amp;mut Box&lt;ListNode&gt;</code> works because Rust follows the box for you.)</p>
+
+<p>There's also a one-line version of the two lines inside the loop:</p>
+
+<pre class="code"><code>tail = tail.next.<span class="hf">insert</span>(<span class="ht">Box</span>::<span class="hf">new</span>(<span class="ht">ListNode</span>::<span class="hf">new</span>(i * i)));</code></pre>
+
+<p><code>insert</code> puts the box on the hook and hands back a changeable look at it. Same cost, less typing. It replaces whatever was on the hook, so only use it on an empty one.</p>
+
+<h3>Two lists in, one new list out</h3>
+
+<pre class="code"><code><span class="hk">fn</span> <span class="hf">pairwise_sum</span>(
+    l1: <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt;,
+    l2: <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt;,
+) -&gt; <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt; {
+    <span class="hk">let</span> <span class="hk">mut</span> dummy = <span class="ht">ListNode</span>::<span class="hf">new</span>(<span class="hn">0</span>);
+    <span class="hk">let</span> <span class="hk">mut</span> tail = &amp;<span class="hk">mut</span> dummy;
+    <span class="hk">let</span> <span class="hk">mut</span> a = l1;
+    <span class="hk">let</span> <span class="hk">mut</span> b = l2;
+    <span class="hk">while</span> a.<span class="hf">is_some</span>() || b.<span class="hf">is_some</span>() {
+        <span class="hk">let</span> <span class="hk">mut</span> sum = <span class="hn">0</span>;
+        <span class="hk">if</span> <span class="hk">let</span> <span class="hv">Some</span>(node) = a {
+            sum += node.val;
+            a = node.next;
+        }
+        <span class="hk">if</span> <span class="hk">let</span> <span class="hv">Some</span>(node) = b {
+            sum += node.val;
+            b = node.next;
+        }
+        tail.next = <span class="hv">Some</span>(<span class="ht">Box</span>::<span class="hf">new</span>(<span class="ht">ListNode</span>::<span class="hf">new</span>(sum)));
+        tail = tail.next.<span class="hf">as_mut</span>().<span class="hf">unwrap</span>();
+    }
+    dummy.next
+}</code></pre>
+
+<p>That's the two-rows walk from section 3 with a tail bolted on. Each output node is brand new, built from numbers.</p>
+
+<div class="nope-note">
+<p class="nope-head">No peeking while the thumb is down</p>
+<pre class="code nope-code"><code><span class="hk">let</span> <span class="hk">mut</span> tail = &amp;<span class="hk">mut</span> dummy;
+tail.next = <span class="hv">Some</span>(<span class="ht">Box</span>::<span class="hf">new</span>(<span class="ht">ListNode</span>::<span class="hf">new</span>(<span class="hn">1</span>)));
+<span class="hm">println!</span>(<span class="hs">"{:?}"</span>, dummy.next); <span class="hc">// looking while tail still holds the loan</span>
+tail = tail.next.<span class="hf">as_mut</span>().<span class="hf">unwrap</span>();</code></pre>
+<p>As long as <code>tail</code> will be used again, it is the only way into that row, and even printing <code>dummy</code> is a second way in. After the loop, when <code>tail</code> is finished, <code>dummy</code> is all yours again.</p>
+</div>
+
+<p><span class="tag fact">fact</span>Every <code>Box::new</code> in a loop is one trip to the allocator. Building n new nodes costs n allocations. When the nodes you need already exist, you can skip all of that, which is the next section.</p>
+</section>
+
+<section class="chapter" id="s6">
+<div class="ch-head"><span class="door">6</span><h2>Moving real lockers</h2></div>
+
+<p>Section 5 rented new lockers and filled them with numbers. A lot of the time the lockers you need already exist. You want the same nodes, just in a different order, or fewer of them. Then you can leave the allocator alone completely and re-hang lockers you already own.</p>
+
+<p>There's a catch, and it's a physical one. Hand someone a locker and you hand them everything inside it, including the key to the rest of the row. Hang <code>node</code> on your tail while <code>node.next</code> still holds the rest of the list, and the whole rest of the list comes along for the ride.</p>
+
+<p>So before you hand a locker over, pocket its key:</p>
+
+<p class="short"><code>cur = node.next.take();</code></p>
+
+<p><code>take()</code> lifts the key off the hook, gives it to you, and leaves the hook empty. Not a hole, an honest <code>None</code>. The node is now a clean single locker you can hang anywhere.</p>
+
+<figure>
+<svg viewBox="0 0 690 190" role="img" aria-labelledby="d6t">
+<title id="d6t">Left: after moving node.next out, the node has a hole and cannot be handed over. Right: after take, the node's hook is empty and it can be hung anywhere.</title>
+<defs><marker id="ah6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+<text x="20" y="28" class="d-mono" font-size="14">cur = node.next;</text>
+<text x="20" y="74" class="d-mono" font-size="13">node</text>
+<path d="M60 70 L88 70" class="d-arrow" marker-end="url(#ah6)"/>
+<rect x="92" y="48" width="60" height="44" rx="4" class="d-locker"/><text x="122" y="76" class="d-val" font-size="17" text-anchor="middle">4</text>
+<rect x="166" y="56" width="60" height="28" rx="14" class="d-nope" stroke-dasharray="4 3"/><text x="196" y="75" class="d-nopetext" font-size="13" text-anchor="middle" font-style="italic">hole</text>
+<text x="20" y="128" class="d-mono" font-size="13">cur</text>
+<path d="M60 124 L88 124" class="d-arrow" marker-end="url(#ah6)"/>
+<rect x="92" y="108" width="40" height="32" rx="4" class="d-locker"/><text x="112" y="129" class="d-val" font-size="14" text-anchor="middle">5</text>
+<path d="M132 124 L150 124" class="d-arrow" marker-end="url(#ah6)"/>
+<rect x="154" y="108" width="40" height="32" rx="4" class="d-locker"/><text x="174" y="129" class="d-val" font-size="14" text-anchor="middle">6</text>
+<text x="20" y="172" class="d-nopetext" font-size="13">node can't be handed over while the hole is there</text>
+<line x1="345" y1="16" x2="345" y2="178" class="d-grid"/>
+<text x="370" y="28" class="d-mono" font-size="14">cur = node.next.take();</text>
+<text x="370" y="74" class="d-mono" font-size="13">node</text>
+<path d="M410 70 L438 70" class="d-arrow" marker-end="url(#ah6)"/>
+<rect x="442" y="48" width="60" height="44" rx="4" class="d-locker"/><text x="472" y="76" class="d-val" font-size="17" text-anchor="middle">4</text>
+<rect x="516" y="56" width="60" height="28" rx="14" class="d-hook"/><text x="546" y="75" class="d-mono" font-size="12" text-anchor="middle" fill="currentColor">None</text>
+<text x="370" y="128" class="d-mono" font-size="13">cur</text>
+<path d="M410 124 L438 124" class="d-arrow" marker-end="url(#ah6)"/>
+<rect x="442" y="108" width="40" height="32" rx="4" class="d-locker"/><text x="462" y="129" class="d-val" font-size="14" text-anchor="middle">5</text>
+<path d="M482 124 L500 124" class="d-arrow" marker-end="url(#ah6)"/>
+<rect x="504" y="108" width="40" height="32" rx="4" class="d-locker"/><text x="524" y="129" class="d-val" font-size="14" text-anchor="middle">6</text>
+<text x="370" y="172" class="d-text" font-size="13">a single clean locker, ready to hang anywhere</text>
+</svg>
+<figcaption>Same rest of the row in <code>cur</code> either way. The difference is what's left behind in <code>node</code>.</figcaption>
+</figure>
+
+<p>Here's a filter that keeps the even numbers, re-hanging the nodes it keeps:</p>
+
+<pre class="code"><code><span class="hk">fn</span> <span class="hf">keep_even</span>(head: <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt;) -&gt; <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt; {
+    <span class="hk">let</span> <span class="hk">mut</span> dummy = <span class="ht">ListNode</span>::<span class="hf">new</span>(<span class="hn">0</span>);
+    <span class="hk">let</span> <span class="hk">mut</span> tail = &amp;<span class="hk">mut</span> dummy;
+    <span class="hk">let</span> <span class="hk">mut</span> cur = head;
+    <span class="hk">while</span> <span class="hk">let</span> <span class="hv">Some</span>(<span class="hk">mut</span> node) = cur {
+        cur = node.next.<span class="hf">take</span>();
+        <span class="hk">if</span> node.val % <span class="hn">2</span> == <span class="hn">0</span> {
+            tail.next = <span class="hv">Some</span>(node);
+            tail = tail.next.<span class="hf">as_mut</span>().<span class="hf">unwrap</span>();
+        }
+    }
+    dummy.next
+}</code></pre>
+
+<p>Odd nodes go out of scope at the end of their pass and are freed. Even nodes get re-hung. The dummy is on the stack, so the whole thing makes zero allocations.</p>
+
+<div class="nope-note">
+<p class="nope-head">Forget the take, and it doesn't compile</p>
+<pre class="code nope-code"><code>cur = node.next; <span class="hc">// moved out, leaving a hole</span>
+<span class="hk">if</span> node.val % <span class="hn">2</span> == <span class="hn">0</span> {
+    tail.next = <span class="hv">Some</span>(node); <span class="hc">// handing over a node with a hole in it</span>
+    tail = tail.next.<span class="hf">as_mut</span>().<span class="hf">unwrap</span>();
+}</code></pre>
+<p>In the reversal from section 4, a hole like this got filled on the very next line. Here it never gets filled, so <code>Some(node)</code> would be handing over a locker with a ripped-out hook. Rust won't let a partly moved value travel.</p>
+</div>
+
+<h3>Several tails at once</h3>
+
+<p>Nothing says you get only one output row. Sort nodes into two piles as you go, then couple the piles at the end:</p>
+
+<pre class="code"><code><span class="hk">fn</span> <span class="hf">odds_then_evens</span>(head: <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt;) -&gt; <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt; {
+    <span class="hk">let</span> <span class="hk">mut</span> odd_dummy = <span class="ht">ListNode</span>::<span class="hf">new</span>(<span class="hn">0</span>);
+    <span class="hk">let</span> <span class="hk">mut</span> even_dummy = <span class="ht">ListNode</span>::<span class="hf">new</span>(<span class="hn">0</span>);
+    <span class="hk">let</span> <span class="hk">mut</span> odd_tail = &amp;<span class="hk">mut</span> odd_dummy;
+    <span class="hk">let</span> <span class="hk">mut</span> even_tail = &amp;<span class="hk">mut</span> even_dummy;
+    <span class="hk">let</span> <span class="hk">mut</span> cur = head;
+    <span class="hk">while</span> <span class="hk">let</span> <span class="hv">Some</span>(<span class="hk">mut</span> node) = cur {
+        cur = node.next.<span class="hf">take</span>();
+        <span class="hk">if</span> node.val % <span class="hn">2</span> != <span class="hn">0</span> {
+            odd_tail.next = <span class="hv">Some</span>(node);
+            odd_tail = odd_tail.next.<span class="hf">as_mut</span>().<span class="hf">unwrap</span>();
+        } <span class="hk">else</span> {
+            even_tail.next = <span class="hv">Some</span>(node);
+            even_tail = even_tail.next.<span class="hf">as_mut</span>().<span class="hf">unwrap</span>();
+        }
+    }
+    odd_tail.next = even_dummy.next;
+    odd_dummy.next
+}</code></pre>
+
+<p>Two cardboard lockers, two thumbs. The last line, <code>odd_tail.next = even_dummy.next;</code>, works only because both thumbs are done by then. The loan that <code>even_tail</code> held on <code>even_dummy</code> ended the last time <code>even_tail</code> was used, so <code>even_dummy</code> is free to be emptied. Splitting into k piles is the same idea with k dummies.</p>
+
+<h3>Merging two sorted rows</h3>
+
+<p>Two sorted rows of lockers, one output row. Look at the front of each, take the smaller, repeat:</p>
+
+<pre class="code"><code><span class="hk">fn</span> <span class="hf">merge</span>(
+    l1: <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt;,
+    l2: <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt;,
+) -&gt; <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt; {
+    <span class="hk">let</span> <span class="hk">mut</span> dummy = <span class="ht">ListNode</span>::<span class="hf">new</span>(<span class="hn">0</span>);
+    <span class="hk">let</span> <span class="hk">mut</span> tail = &amp;<span class="hk">mut</span> dummy;
+    <span class="hk">let</span> <span class="hk">mut</span> a = l1;
+    <span class="hk">let</span> <span class="hk">mut</span> b = l2;
+    <span class="hk">while</span> a.<span class="hf">is_some</span>() &amp;&amp; b.<span class="hf">is_some</span>() {
+        <span class="hk">if</span> a.<span class="hf">as_ref</span>().<span class="hf">unwrap</span>().val &lt;= b.<span class="hf">as_ref</span>().<span class="hf">unwrap</span>().val {
+            <span class="hk">let</span> <span class="hk">mut</span> node = a.<span class="hf">unwrap</span>();
+            a = node.next.<span class="hf">take</span>();
+            tail.next = <span class="hv">Some</span>(node);
+        } <span class="hk">else</span> {
+            <span class="hk">let</span> <span class="hk">mut</span> node = b.<span class="hf">unwrap</span>();
+            b = node.next.<span class="hf">take</span>();
+            tail.next = <span class="hv">Some</span>(node);
+        }
+        tail = tail.next.<span class="hf">as_mut</span>().<span class="hf">unwrap</span>();
+    }
+    <span class="hk">if</span> a.<span class="hf">is_some</span>() {
+        tail.next = a;
+    } <span class="hk">else</span> {
+        tail.next = b;
+    }
+    dummy.next
+}</code></pre>
+
+<p>One new tool: <code>a.as_ref()</code>. It turns "the hook" into "maybe a look at the locker on that hook", so <code>a.as_ref().unwrap().val</code> reads the front value without taking anything. Then <code>a.unwrap()</code>, with no <code>as_ref</code>, really does take the box out of <code>a</code>, and the next line puts the rest back.</p>
+
+<p>The ending is worth a second look. When one row runs out, whatever is left of the other row hangs on in a single assignment, however long it is.</p>
+
+<p><span class="tag judgment">judgment</span>Re-hanging versus building new nodes is a trade. Re-hanging makes no allocations, but it uses up the input. Building new nodes from values costs one allocation per node, but if you only looked at the input, the input survives. When a function receives a list by value, whoever called it has already given it up, so re-hanging is usually the better deal.</p>
+</section>
+
+<section class="chapter" id="s7">
+<div class="ch-head"><span class="door">7</span><h2>Holding the hook</h2></div>
+
+<p>Rebuilding with a dummy and a tail is safe and clear, but it touches every node, including the ones you keep. Sometimes you'd rather stand in the row and fix one spot.</p>
+
+<p>Think of the attendant at a coat check. The attendant never holds a coat. The attendant walks along the hooks. To remove a coat, they take it off its hook and hang up whatever that coat was carrying in its place. The hook is the thing they hold.</p>
+
+<p>In C the classic deletion trick holds a pointer to a pointer: not the node, but the place where the node's address is stored. In Rust that's a changeable reference to a hook, <code>&amp;mut Option&lt;Box&lt;ListNode&gt;&gt;</code>. Watch one walk a row and remove the negatives:</p>
+
+<div class="stepper" data-algo="hook" data-input="3,-1,-2,4"><pre class="code"><code><span class="hk">fn</span> <span class="hf">remove_negatives</span>(<span class="hk">mut</span> head: <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt;) -&gt; <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt; {
+    <span class="hk">let</span> <span class="hk">mut</span> hook = &amp;<span class="hk">mut</span> head;
+    <span class="hk">while</span> hook.<span class="hf">is_some</span>() {
+        <span class="hk">if</span> hook.<span class="hf">as_ref</span>().<span class="hf">unwrap</span>().val &lt; <span class="hn">0</span> {
+            *hook = hook.<span class="hf">as_mut</span>().<span class="hf">unwrap</span>().next.<span class="hf">take</span>();
+        } <span class="hk">else</span> {
+            hook = &amp;<span class="hk">mut</span> hook.<span class="hf">as_mut</span>().<span class="hf">unwrap</span>().next;
+        }
+    }
+    head
+}</code></pre></div>
+
+<p>Three things to see here.</p>
+
+<p><code>*hook = ...</code> writes onto the hook itself. The star means "the thing <code>hook</code> refers to", which is an actual hook in the row: <code>head</code>, or some node's <code>next</code>. Whatever used to hang there loses its last owner and is freed.</p>
+
+<p>After a removal, <code>hook</code> stays put. A new locker just arrived on that hook and nobody has checked it yet. Only when a locker is kept does <code>hook</code> move on, to the hook inside that locker.</p>
+
+<p>And there's no dummy. The variable <code>head</code> is a hook like any other, so removing the very first locker is the same line of code as removing one in the middle. (That's why the parameter is <code>mut head</code>: you can only lend out a changeable look at something you're allowed to change.)</p>
+
+<div class="nope-note">
+<p class="nope-head">The tempting version doesn't compile</p>
+<pre class="code nope-code"><code><span class="hk">while</span> <span class="hk">let</span> <span class="hv">Some</span>(node) = hook {
+    <span class="hk">if</span> node.val &lt; <span class="hn">0</span> {
+        *hook = node.next.<span class="hf">take</span>(); <span class="hc">// refused</span>
+    } <span class="hk">else</span> {
+        hook = &amp;<span class="hk">mut</span> node.next;
+    }
+}</code></pre>
+<p>It looks like the same logic, and it is. Rust still says no.</p>
+<p><span class="tag model">model</span><code>node</code> is a loan taken out through <code>hook</code>. On the <code>else</code> branch, <code>hook</code> moves forward <em>through</em> that loan, so the checker treats the loan as possibly alive everywhere in the loop, including on the branch that overwrites <code>*hook</code>. It reasons about the loop as a whole and errs toward refusing. Check first with a short look that ends right away (<code>hook.as_ref().unwrap().val</code>), then act, and the conflict disappears.</p>
+</div>
+
+<h3>Standing on a locker, fixing what follows</h3>
+
+<p>A second way to edit in place: hold a changeable look at one locker and repair what hangs after it.</p>
+
+<pre class="code"><code><span class="hk">fn</span> <span class="hf">drop_dips</span>(<span class="hk">mut</span> head: <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt;) -&gt; <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt; {
+    <span class="hk">let</span> <span class="hk">mut</span> cur = head.<span class="hf">as_mut</span>();
+    <span class="hk">while</span> <span class="hk">let</span> <span class="hv">Some</span>(node) = cur {
+        <span class="hk">let</span> v = node.val;
+        <span class="hk">while</span> node.next.<span class="hf">is_some</span>() &amp;&amp; node.next.<span class="hf">as_ref</span>().<span class="hf">unwrap</span>().val &lt; v {
+            node.next = node.next.<span class="hf">take</span>().<span class="hf">unwrap</span>().next;
+        }
+        cur = node.next.<span class="hf">as_mut</span>();
+    }
+    head
+}</code></pre>
+
+<p><code>head.as_mut()</code> gives "maybe a changeable look at the first locker." Inside the loop, <code>v</code> holds the value you're standing on, and the inner <code>while</code> keeps cutting out the next locker as long as it's smaller. Read <code>node.next = node.next.take().unwrap().next;</code> as: take the next locker off the hook, open it, keep the key it holds, hang that key on our hook. The opened locker has no owner after that line and is freed.</p>
+
+<p>This shape can never remove the first locker, since you only ever fix what comes after the one you're standing on. Fine when the first node is always safe. If it isn't, use the hook version, or put a cardboard locker in front.</p>
+
+<h3>Inserting</h3>
+
+<p>Inserting is deleting run backwards. Walk the hook to the right spot, take what's hanging there, and hang a new locker that holds it:</p>
+
+<pre class="code"><code><span class="hk">fn</span> <span class="hf">insert_sorted</span>(
+    <span class="hk">mut</span> head: <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt;,
+    val: i32,
+) -&gt; <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt; {
+    <span class="hk">let</span> <span class="hk">mut</span> hook = &amp;<span class="hk">mut</span> head;
+    <span class="hk">while</span> hook.<span class="hf">is_some</span>() &amp;&amp; hook.<span class="hf">as_ref</span>().<span class="hf">unwrap</span>().val &lt; val {
+        hook = &amp;<span class="hk">mut</span> hook.<span class="hf">as_mut</span>().<span class="hf">unwrap</span>().next;
+    }
+    <span class="hk">let</span> rest = hook.<span class="hf">take</span>();
+    *hook = <span class="hv">Some</span>(<span class="ht">Box</span>::<span class="hf">new</span>(<span class="ht">ListNode</span> { val, next: rest }));
+    head
+}</code></pre>
+
+<p>It handles every case, including an empty list and inserting before the first node, with no special code.</p>
+
+<p><span class="tag judgment">judgment</span>For removals, the hook version and the rebuild version from section 6 both make zero allocations. The hook version leaves every kept node and its hook untouched. The rebuild version rewrites every kept node's <code>next</code>, which is a few extra memory writes and much easier to get right the first time. Pick the hook when you're changing a handful of spots in a long row. Pick the rebuild when the logic is fiddly.</p>
+</section>
+
+<section class="chapter" id="s8">
+<div class="ch-head"><span class="door">8</span><h2>Cut and couple</h2></div>
+
+<p>A train is a list. Uncouple between two cars and you have two trains. Couple two trains and you have one. Finding the right coupling means walking down the platform, but the uncoupling itself is one motion no matter how long the train is.</p>
+
+<p>Cutting a list after k nodes: walk a hook k steps, then <code>take()</code> whatever hangs there.</p>
+
+<pre class="code"><code><span class="hk">fn</span> <span class="hf">split_after</span>(
+    head: &amp;<span class="hk">mut</span> <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt;,
+    k: usize,
+) -&gt; <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt; {
+    <span class="hk">let</span> <span class="hk">mut</span> hook = head;
+    <span class="hk">let</span> <span class="hk">mut</span> i = <span class="hn">0</span>;
+    <span class="hk">while</span> i &lt; k &amp;&amp; hook.<span class="hf">is_some</span>() {
+        hook = &amp;<span class="hk">mut</span> hook.<span class="hf">as_mut</span>().<span class="hf">unwrap</span>().next;
+        i += <span class="hn">1</span>;
+    }
+    hook.<span class="hf">take</span>()
+}</code></pre>
+
+<p>This function takes <code>&amp;mut Option&lt;Box&lt;ListNode&gt;&gt;</code>, a changeable look at a hook. It edits your list where it sits (the front part stays in your variable) and hands you the piece it cut off. If the list is shorter than k, nothing gets cut and you get back <code>None</code>.</p>
+
+<figure>
+<svg viewBox="0 0 690 160" role="img" aria-labelledby="d8t">
+<title id="d8t">split_after with k equal to 2 turns one list 1 to 5 into a front list 1, 2 and a back list 3, 4, 5.</title>
+<defs><marker id="ah8" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+<text x="10" y="38" class="d-mono" font-size="13">list</text>
+<path d="M50 33 L68 33" class="d-arrow" marker-end="url(#ah8)"/>
+<g>
+<rect x="72" y="16" width="40" height="34" rx="4" class="d-locker"/><text x="92" y="38" class="d-val" font-size="15" text-anchor="middle">1</text>
+<path d="M112 33 L128 33" class="d-arrow" marker-end="url(#ah8)"/>
+<rect x="132" y="16" width="40" height="34" rx="4" class="d-locker"/><text x="152" y="38" class="d-val" font-size="15" text-anchor="middle">2</text>
+<path d="M172 33 L196 33" class="d-arrow" marker-end="url(#ah8)"/>
+<rect x="200" y="16" width="40" height="34" rx="4" class="d-locker"/><text x="220" y="38" class="d-val" font-size="15" text-anchor="middle">3</text>
+<path d="M240 33 L256 33" class="d-arrow" marker-end="url(#ah8)"/>
+<rect x="260" y="16" width="40" height="34" rx="4" class="d-locker"/><text x="280" y="38" class="d-val" font-size="15" text-anchor="middle">4</text>
+<path d="M300 33 L316 33" class="d-arrow" marker-end="url(#ah8)"/>
+<rect x="320" y="16" width="40" height="34" rx="4" class="d-locker"/><text x="340" y="38" class="d-val" font-size="15" text-anchor="middle">5</text>
+</g>
+<path d="M184 10 L184 58" class="d-hl"/>
+<text x="184" y="74" class="d-text" font-size="12" text-anchor="middle">cut here, k = 2</text>
+<text x="10" y="118" class="d-mono" font-size="13">list</text>
+<path d="M50 113 L68 113" class="d-arrow" marker-end="url(#ah8)"/>
+<rect x="72" y="96" width="40" height="34" rx="4" class="d-locker"/><text x="92" y="118" class="d-val" font-size="15" text-anchor="middle">1</text>
+<path d="M112 113 L128 113" class="d-arrow" marker-end="url(#ah8)"/>
+<rect x="132" y="96" width="40" height="34" rx="4" class="d-locker"/><text x="152" y="118" class="d-val" font-size="15" text-anchor="middle">2</text>
+<rect x="180" y="100" width="48" height="26" rx="13" class="d-hook"/><text x="204" y="118" class="d-mono" font-size="11" text-anchor="middle" fill="currentColor">None</text>
+<text x="300" y="118" class="d-mono" font-size="13">back</text>
+<path d="M340 113 L358 113" class="d-arrow" marker-end="url(#ah8)"/>
+<rect x="362" y="96" width="40" height="34" rx="4" class="d-locker"/><text x="382" y="118" class="d-val" font-size="15" text-anchor="middle">3</text>
+<path d="M402 113 L418 113" class="d-arrow" marker-end="url(#ah8)"/>
+<rect x="422" y="96" width="40" height="34" rx="4" class="d-locker"/><text x="442" y="118" class="d-val" font-size="15" text-anchor="middle">4</text>
+<path d="M462 113 L478 113" class="d-arrow" marker-end="url(#ah8)"/>
+<rect x="482" y="96" width="40" height="34" rx="4" class="d-locker"/><text x="502" y="118" class="d-val" font-size="15" text-anchor="middle">5</text>
+<text x="10" y="152" class="d-mono" font-size="12">let back = split_after(&amp;mut list, 2);</text>
+</svg>
+<figcaption>The walk costs two steps. The cut itself moves one key off one hook.</figcaption>
+</figure>
+
+<p>Coupling is the reverse: walk to the empty hook at the end of the first row and hang the second row there.</p>
+
+<pre class="code"><code><span class="hk">fn</span> <span class="hf">join</span>(
+    <span class="hk">mut</span> a: <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt;,
+    b: <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt;,
+) -&gt; <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt; {
+    <span class="hk">let</span> <span class="hk">mut</span> hook = &amp;<span class="hk">mut</span> a;
+    <span class="hk">while</span> hook.<span class="hf">is_some</span>() {
+        hook = &amp;<span class="hk">mut</span> hook.<span class="hf">as_mut</span>().<span class="hf">unwrap</span>().next;
+    }
+    *hook = b;
+    a
+}</code></pre>
+
+<p><span class="tag fact">fact</span>Cutting or coupling moves exactly one 8-byte key, whether there are three lockers behind it or three million. Finding the spot is what costs: a walk of k steps to cut, a walk to the end to couple.</p>
+
+<h3>Gluing moves together</h3>
+
+<p>Most rearranging comes down to cut, do something to a piece, couple. Moving the first k nodes to the back:</p>
+
+<pre class="code"><code><span class="hk">fn</span> <span class="hf">rotate_left</span>(head: <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt;, k: usize) -&gt; <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt; {
+    <span class="hk">let</span> <span class="hk">mut</span> front = head;
+    <span class="hk">let</span> back = <span class="hf">split_after</span>(&amp;<span class="hk">mut</span> front, k);
+    <span class="hf">join</span>(back, front)
+}</code></pre>
+
+<p>Chopping a list into pieces of size k, kept in a <code>Vec</code>. A <code>Vec&lt;Option&lt;Box&lt;ListNode&gt;&gt;&gt;</code> is a row of hooks, 8 bytes each; the lockers themselves don't move.</p>
+
+<pre class="code"><code><span class="hk">fn</span> <span class="hf">chunks</span>(head: <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt;, k: usize) -&gt; <span class="ht">Vec</span>&lt;<span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt;&gt; {
+    <span class="hk">let</span> <span class="hk">mut</span> parts = <span class="ht">Vec</span>::<span class="hf">new</span>();
+    <span class="hk">let</span> <span class="hk">mut</span> rest = head;
+    <span class="hk">while</span> rest.<span class="hf">is_some</span>() {
+        <span class="hk">let</span> after = <span class="hf">split_after</span>(&amp;<span class="hk">mut</span> rest, k);
+        parts.<span class="hf">push</span>(rest);
+        rest = after;
+    }
+    parts
+}</code></pre>
+
+<p>Reversing just a middle stretch, positions <code>from</code> up to (not including) <code>to</code>, counting from 0. This one uses <code>reverse</code> from section 4:</p>
+
+<pre class="code"><code><span class="hk">fn</span> <span class="hf">reverse_middle</span>(
+    head: <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt;,
+    from: usize,
+    to: usize,
+) -&gt; <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt; {
+    <span class="hk">let</span> <span class="hk">mut</span> front = head;
+    <span class="hk">let</span> <span class="hk">mut</span> middle = <span class="hf">split_after</span>(&amp;<span class="hk">mut</span> front, from);
+    <span class="hk">let</span> back = <span class="hf">split_after</span>(&amp;<span class="hk">mut</span> middle, to - from);
+    <span class="hf">join</span>(<span class="hf">join</span>(front, <span class="hf">reverse</span>(middle)), back)
+}</code></pre>
+
+<p>And interleaving two rows, one locker from each in turn, until both are empty:</p>
+
+<pre class="code"><code><span class="hk">fn</span> <span class="hf">weave</span>(
+    l1: <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt;,
+    l2: <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt;,
+) -&gt; <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt; {
+    <span class="hk">let</span> <span class="hk">mut</span> dummy = <span class="ht">ListNode</span>::<span class="hf">new</span>(<span class="hn">0</span>);
+    <span class="hk">let</span> <span class="hk">mut</span> tail = &amp;<span class="hk">mut</span> dummy;
+    <span class="hk">let</span> <span class="hk">mut</span> a = l1;
+    <span class="hk">let</span> <span class="hk">mut</span> b = l2;
+    <span class="hk">while</span> a.<span class="hf">is_some</span>() || b.<span class="hf">is_some</span>() {
+        <span class="hk">if</span> <span class="hk">let</span> <span class="hv">Some</span>(<span class="hk">mut</span> node) = a {
+            a = node.next.<span class="hf">take</span>();
+            tail.next = <span class="hv">Some</span>(node);
+            tail = tail.next.<span class="hf">as_mut</span>().<span class="hf">unwrap</span>();
+        }
+        <span class="hk">if</span> <span class="hk">let</span> <span class="hv">Some</span>(<span class="hk">mut</span> node) = b {
+            b = node.next.<span class="hf">take</span>();
+            tail.next = <span class="hv">Some</span>(node);
+            tail = tail.next.<span class="hf">as_mut</span>().<span class="hf">unwrap</span>();
+        }
+    }
+    dummy.next
+}</code></pre>
+
+<p><span class="tag judgment">judgment</span>When the cut position depends on the length (the middle, the last k, n equal parts), count first with <code>length</code> from section 2, then cut. Two walks, no extra memory, and the code reads like the plan. That's usually a better deal than trying to find the spot in one clever walk.</p>
+</section>
+
+<section class="chapter" id="s9">
+<div class="ch-head"><span class="door">9</span><h2>Two fingers</h2></div>
+
+<p>A lot of list techniques walk two pointers through the same row. One moves one step at a time and another moves two. Or one runs k steps ahead of the other. In Rust, two <em>lookers</em> are no problem at all. Finding the middle value, for instance:</p>
+
+<pre class="code"><code><span class="hk">fn</span> <span class="hf">middle_value</span>(head: &amp;<span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt;) -&gt; i32 {
+    <span class="hk">let</span> <span class="hk">mut</span> slow = head;
+    <span class="hk">let</span> <span class="hk">mut</span> fast = head;
+    <span class="hk">while</span> fast.<span class="hf">is_some</span>() &amp;&amp; fast.<span class="hf">as_ref</span>().<span class="hf">unwrap</span>().next.<span class="hf">is_some</span>() {
+        slow = &amp;slow.<span class="hf">as_ref</span>().<span class="hf">unwrap</span>().next;
+        fast = &amp;fast.<span class="hf">as_ref</span>().<span class="hf">unwrap</span>().next.<span class="hf">as_ref</span>().<span class="hf">unwrap</span>().next;
+    }
+    slow.<span class="hf">as_ref</span>().<span class="hf">unwrap</span>().val
+}</code></pre>
+
+<p><code>fast</code> moves two hooks per pass, <code>slow</code> moves one. When <code>fast</code> runs out of row, <code>slow</code> is halfway. The <code>while</code> condition checks both hooks <code>fast</code> is about to jump over, so it never unwraps an empty one. (With an even number of nodes this lands on the second of the two middle nodes.)</p>
+
+<p>The trouble starts when one finger needs to change things. Think of the row as a museum exhibit. A crowd of sightseers can wander it at once. The mover, the one person allowed to rearrange lockers, works alone: while anyone is looking, the mover waits, and while the mover works, nobody looks.</p>
+
+<div class="nope-note">
+<p class="nope-head">A looker and a changer in the same row doesn't compile</p>
+<pre class="code nope-code"><code><span class="hk">let</span> <span class="hk">mut</span> ahead = &amp;dummy.next; <span class="hc">// a looking finger</span>
+<span class="hk">let</span> <span class="hk">mut</span> i = <span class="hn">0</span>;
+<span class="hk">while</span> i &lt; k {
+    ahead = &amp;ahead.<span class="hf">as_ref</span>().<span class="hf">unwrap</span>().next;
+    i += <span class="hn">1</span>;
+}
+<span class="hk">let</span> <span class="hk">mut</span> behind = &amp;<span class="hk">mut</span> dummy; <span class="hc">// a changing finger, same list: refused</span>
+<span class="hk">while</span> <span class="hk">let</span> <span class="hv">Some</span>(node) = ahead {
+    ahead = &amp;node.next;
+    behind = behind.next.<span class="hf">as_mut</span>().<span class="hf">unwrap</span>();
+}</code></pre>
+<p><code>ahead</code> is still looking when <code>behind</code> asks for a changeable loan of the same row. In C this is the textbook way to remove the k-th node from the end. In Rust it needs a different plan.</p>
+</div>
+
+<p>There are four ways out. Each has a price.</p>
+
+<h3>Exit 1: count first</h3>
+
+<p>Turn "k-th from the end" into "position n minus k from the front", then walk one changeable hook there.</p>
+
+<pre class="code"><code><span class="hk">fn</span> <span class="hf">remove_at</span>(
+    <span class="hk">mut</span> head: <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt;,
+    index: usize,
+) -&gt; <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt; {
+    <span class="hk">let</span> <span class="hk">mut</span> hook = &amp;<span class="hk">mut</span> head;
+    <span class="hk">let</span> <span class="hk">mut</span> i = <span class="hn">0</span>;
+    <span class="hk">while</span> i &lt; index &amp;&amp; hook.<span class="hf">is_some</span>() {
+        hook = &amp;<span class="hk">mut</span> hook.<span class="hf">as_mut</span>().<span class="hf">unwrap</span>().next;
+        i += <span class="hn">1</span>;
+    }
+    <span class="hk">if</span> hook.<span class="hf">is_some</span>() {
+        *hook = hook.<span class="hf">as_mut</span>().<span class="hf">unwrap</span>().next.<span class="hf">take</span>();
+    }
+    head
+}</code></pre>
+
+<pre class="code"><code><span class="hk">let</span> n = <span class="hf">length</span>(&amp;head);
+<span class="hf">remove_at</span>(head, n - k)</code></pre>
+
+<p>Two walks instead of one, nothing extra in memory. This is the default choice, and most two-finger tricks translate into it: the middle is position n / 2, the last k start at n minus k, and so on.</p>
+
+<h3>Exit 2: copy to a clipboard</h3>
+
+<p>Write the numbers on a clipboard (the <code>to_vec</code> from section 2), do anything you like with them, and if needed write them back into the same nodes:</p>
+
+<pre class="code"><code><span class="hk">fn</span> <span class="hf">write_back</span>(head: &amp;<span class="hk">mut</span> <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt;, values: &amp;<span class="ht">Vec</span>&lt;i32&gt;) {
+    <span class="hk">let</span> <span class="hk">mut</span> cur = head.<span class="hf">as_mut</span>();
+    <span class="hk">let</span> <span class="hk">mut</span> i = <span class="hn">0</span>;
+    <span class="hk">while</span> <span class="hk">let</span> <span class="hv">Some</span>(node) = cur {
+        node.val = values[i];
+        i += <span class="hn">1</span>;
+        cur = node.next.<span class="hf">as_mut</span>();
+    }
+}</code></pre>
+
+<pre class="code"><code><span class="hk">fn</span> <span class="hf">sort_values</span>(<span class="hk">mut</span> head: <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt;) -&gt; <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt; {
+    <span class="hk">let</span> <span class="hk">mut</span> values = <span class="hf">to_vec</span>(&amp;head);
+    values.<span class="hf">sort</span>();
+    <span class="hf">write_back</span>(&amp;<span class="hk">mut</span> head, &amp;values);
+    head
+}</code></pre>
+
+<p><code>head.as_mut()</code> and <code>node.next.as_mut()</code> walk the row with a changeable look, so <code>node.val = ...</code> overwrites numbers in place. No node moves. That's also the catch: this changes values, not nodes. If a task says the nodes themselves must be rearranged, writing values back doesn't count.</p>
+
+<h3>Exit 3: make a copy of the row</h3>
+
+<p>Sometimes you want to return a list that starts in the middle. You can't hand out the middle of a row and keep the front: the middle locker's key lives inside the locker before it. With two lookers you could find the middle and then copy everything from there on:</p>
+
+<pre class="code"><code>slow.<span class="hf">clone</span>() <span class="hc">// a fresh copy of every node from slow onward</span></code></pre>
+
+<p>Or give up the front half on purpose, which is often what the task wants anyway:</p>
+
+<pre class="code"><code><span class="hk">fn</span> <span class="hf">from_middle</span>(head: <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt;) -&gt; <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt; {
+    <span class="hk">let</span> n = <span class="hf">length</span>(&amp;head);
+    <span class="hk">let</span> <span class="hk">mut</span> cur = head;
+    <span class="hk">let</span> <span class="hk">mut</span> i = <span class="hn">0</span>;
+    <span class="hk">while</span> i &lt; n / <span class="hn">2</span> {
+        cur = cur.<span class="hf">unwrap</span>().next; <span class="hc">// the front node is freed right here</span>
+        i += <span class="hn">1</span>;
+    }
+    cur
+}</code></pre>
+
+<p><code>cur.unwrap().next</code> takes the box, pulls out its key, and the emptied locker is freed right on that line.</p>
+
+<p><span class="tag fact">fact</span>On a 1000-node list, counted with an allocation counter: the <code>clone()</code> route made 500 new allocations (a fresh copy of every node from the middle on). The move route made none, and freed the 500 front nodes along the way.</p>
+
+<h3>Exit 4: step outside the rules</h3>
+
+<p>Raw pointers let two fingers do whatever they like, with nobody checking. That's section 14.</p>
+
+<h3>Why the clipboard is often the fast choice</h3>
+
+<p>Copying into a <code>Vec</code> costs memory, so it's tempting to think it's the slow option. The machine disagrees.</p>
+
+<figure>
+<svg viewBox="0 0 690 210" role="img" aria-labelledby="d9t">
+<title id="d9t">Time to sum one element: Vec 0.24 nanoseconds, list with nodes allocated in order about 3.9 nanoseconds, list with nodes linked in random order about 183 nanoseconds.</title>
+<line x1="250" y1="22" x2="250" y2="168" class="d-grid"/>
+<line x1="350" y1="22" x2="350" y2="168" class="d-grid"/>
+<line x1="450" y1="22" x2="450" y2="168" class="d-grid"/>
+<line x1="550" y1="22" x2="550" y2="168" class="d-grid"/>
+<line x1="650" y1="22" x2="650" y2="168" class="d-grid"/>
+<text x="250" y="186" class="d-text" font-size="12" text-anchor="middle">0</text>
+<text x="350" y="186" class="d-text" font-size="12" text-anchor="middle">50</text>
+<text x="450" y="186" class="d-text" font-size="12" text-anchor="middle">100</text>
+<text x="550" y="186" class="d-text" font-size="12" text-anchor="middle">150</text>
+<text x="650" y="186" class="d-text" font-size="12" text-anchor="middle">200</text>
+<text x="450" y="204" class="d-text" font-size="12" text-anchor="middle">nanoseconds per element</text>
+<g><title>Vec of i32: 0.24 ns per element</title>
+<text x="240" y="47" class="d-text" font-size="13" text-anchor="end">Vec&lt;i32&gt;</text>
+<rect x="250" y="32" width="1.5" height="22" class="d-bar"/>
+<text x="260" y="48" class="d-mono" font-size="12">0.24</text></g>
+<g><title>List, nodes allocated in order: 3.7 to 4.1 ns per element</title>
+<text x="240" y="95" class="d-text" font-size="13" text-anchor="end">list, nodes in order</text>
+<rect x="250" y="80" width="7.8" height="22" rx="2" class="d-bar"/>
+<text x="266" y="96" class="d-mono" font-size="12">~3.9</text></g>
+<g><title>List, nodes linked in random order: 182 to 185 ns per element</title>
+<text x="240" y="143" class="d-text" font-size="13" text-anchor="end">list, nodes scattered</text>
+<rect x="250" y="128" width="366" height="22" rx="3" class="d-bar"/>
+<text x="624" y="144" class="d-mono" font-size="12">~183</text></g>
+</svg>
+<figcaption>Summing 4 million numbers, best of 7 runs, one 2-core machine, optimized build. Same values each time; only the memory layout changes.</figcaption>
+</figure>
+
+<p><span class="tag fact">fact</span>Those numbers were measured. The <code>Vec</code> takes about a quarter of a nanosecond per number. A list whose nodes happened to be allocated one after another takes about 4. The same list with its nodes linked in a shuffled order takes about 183, roughly 750 times the <code>Vec</code>.</p>
+
+<p><span class="tag model">model</span>A <code>Vec</code> is one block of memory read front to back, and the processor fetches the next chunk before you ask for it. A list is a trail of addresses: you can't know where node 5 lives until you've read node 4. When the nodes sit close together the trail is a series of short hops. When they're scattered, nearly every hop is a full trip out to main memory, and the processor just waits.</p>
+
+<p><span class="tag judgment">judgment</span>Copying to a <code>Vec</code> and working there is often faster in practice than clever pointer work on the list, even counting the copy. Memory is what you pay. When a task caps extra memory, you pay in time instead.</p>
+</section>
+
+<section class="chapter" id="s10">
+<div class="ch-head"><span class="door">10</span><h2>Recursion</h2></div>
+
+<p>Picture a hallway with one person standing at each locker. You ask the first person how long the row is. They can't answer yet, so they ask the person at the next locker, who asks the next one, and so on. The last person sees an empty hook and says "zero." Then the answers travel back: one, two, three, all the way to you.</p>
+
+<pre class="code"><code><span class="hk">fn</span> <span class="hf">length_rec</span>(head: &amp;<span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt;) -&gt; usize {
+    <span class="hk">match</span> head {
+        <span class="hv">None</span> =&gt; <span class="hn">0</span>,
+        <span class="hv">Some</span>(node) =&gt; <span class="hn">1</span> + <span class="hf">length_rec</span>(&amp;node.next),
+    }
+}</code></pre>
+
+<p><code>match</code> is <code>if let</code> for every case at once: you list each shape the value can have, and what to do for each. A list is either empty (<code>None</code>) or a box with a rest behind it (<code>Some(node)</code>). Rust checks that you covered every case, so you can't forget the empty list.</p>
+
+<p>Each person waiting in the hallway is a <em>stack frame</em>: a small block of memory holding that call's variables while it waits for the call after it. Keep that picture. It comes back in a minute.</p>
+
+<h3>Merging, the short way</h3>
+
+<pre class="code"><code><span class="hk">fn</span> <span class="hf">merge</span>(
+    l1: <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt;,
+    l2: <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt;,
+) -&gt; <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt; {
+    <span class="hk">match</span> (l1, l2) {
+        (<span class="hv">None</span>, rest) | (rest, <span class="hv">None</span>) =&gt; rest,
+        (<span class="hv">Some</span>(<span class="hk">mut</span> a), <span class="hv">Some</span>(<span class="hk">mut</span> b)) =&gt; {
+            <span class="hk">if</span> a.val &lt;= b.val {
+                a.next = <span class="hf">merge</span>(a.next, <span class="hv">Some</span>(b));
+                <span class="hv">Some</span>(a)
+            } <span class="hk">else</span> {
+                b.next = <span class="hf">merge</span>(<span class="hv">Some</span>(a), b.next);
+                <span class="hv">Some</span>(b)
+            }
+        }
+    }
+}</code></pre>
+
+<p>Two new pieces of pattern syntax. <code>(l1, l2)</code> packs both lists into a pair so you can match on both at once. And <code>(None, rest) | (rest, None) =&gt; rest</code> is two patterns joined by <code>|</code>, meaning either one: if one list is empty, the answer is the other list, whatever it holds.</p>
+
+<p>The last arm does the real work. Both lists have a front locker. The smaller front wins. Its <code>next</code> becomes the merge of everything that's left, and the winner goes back as the head. <code>a.next</code> is moved out to be passed down, and the same line fills the hole with the answer, so nothing is ever left half-moved.</p>
+
+<p>Compare it with the loop in section 6. Same job, same result, no dummy and no tail, and it reads almost like the definition of merging.</p>
+
+<h3>Divide and conquer</h3>
+
+<p>With cutting and merging in hand, sorting a list is three moves: cut it in half, sort each half, merge the halves.</p>
+
+<pre class="code"><code><span class="hk">fn</span> <span class="hf">sort</span>(head: <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt;) -&gt; <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt; {
+    <span class="hk">let</span> n = <span class="hf">length</span>(&amp;head);
+    <span class="hk">if</span> n &lt; <span class="hn">2</span> {
+        <span class="hk">return</span> head;
+    }
+    <span class="hk">let</span> <span class="hk">mut</span> front = head;
+    <span class="hk">let</span> back = <span class="hf">split_after</span>(&amp;<span class="hk">mut</span> front, n / <span class="hn">2</span>);
+    <span class="hf">merge</span>(<span class="hf">sort</span>(front), <span class="hf">sort</span>(back))
+}</code></pre>
+
+<p><code>length</code> and <code>split_after</code> are the ones from sections 2 and 8.</p>
+
+<h3>The hallway has a length</h3>
+
+<figure>
+<svg viewBox="0 0 690 220" role="img" aria-labelledby="d10t">
+<title id="d10t">Recursive merge stacks one frame per node. Each frame waits for the one above it. A default 8 MiB stack runs out after tens of thousands of frames in a debug build.</title>
+<rect x="40" y="14" width="300" height="190" rx="6" class="d-region"/>
+<text x="352" y="30" class="d-text" font-size="13">the stack, 8 MiB by default</text>
+<text x="352" y="48" class="d-text" font-size="13">for a program's main thread</text>
+<rect x="60" y="166" width="260" height="28" rx="3" class="d-box"/><text x="72" y="185" class="d-mono" font-size="12">merge([1,4,9], [2,3,10])</text>
+<rect x="60" y="134" width="260" height="28" rx="3" class="d-box"/><text x="72" y="153" class="d-mono" font-size="12">merge([4,9], [2,3,10])</text>
+<rect x="60" y="102" width="260" height="28" rx="3" class="d-box"/><text x="72" y="121" class="d-mono" font-size="12">merge([4,9], [3,10])</text>
+<rect x="60" y="70" width="260" height="28" rx="3" class="d-box"/><text x="72" y="89" class="d-mono" font-size="12">merge([4,9], [10])</text>
+<text x="190" y="52" class="d-text" font-size="14" text-anchor="middle">... one frame per node ...</text>
+<text x="352" y="120" class="d-text" font-size="13">each frame waits for</text>
+<text x="352" y="138" class="d-text" font-size="13">the one above it</text>
+<path d="M330 110 L330 180" class="d-hl"/>
+</svg>
+<figcaption>Every node the merge passes over adds a frame. They all stay until the bottom of the hallway answers.</figcaption>
+</figure>
+
+<p><span class="tag fact">fact</span>Recursive merge goes as deep as the two lists are long, combined. On an 8 MiB stack it ran out of room at about 50 thousand nodes in a debug build, and around 260 thousand in an optimized build (the frames are smaller there). The loop version from section 6 has no depth at all. Sorting's own depth is small, about log<sub>2</sub> n levels of cutting in half; it's the merges inside it that go deep.</p>
+
+<p><span class="tag judgment">judgment</span>Recursion earns its place when the lists are short, or when the depth grows like log n instead of n. For long rows, the loop is the safe choice. When the recursive version is easier to think about, write it first, get it right, and convert it to a loop if the input size calls for it.</p>
+</section>
+
+<section class="chapter" id="s11">
+<div class="ch-head"><span class="door">11</span><h2>Lists inside other things</h2></div>
+
+<p>A list is just a value. You can keep one inside a struct, line several up in a <code>Vec</code>, or pull its nodes apart and drop them into other containers. None of that moves a locker. Containers hold keys.</p>
+
+<p>Think of a post office sorting room with different counters. One counter keeps a single row and answers questions about it. One lets you take parcels off either end of a conveyor. One keeps a stamp book of everything it has seen. One always hands you the lightest parcel in the room. Each has its own rules.</p>
+
+<h3>A struct that keeps a list</h3>
+
+<p>A <code>struct</code> groups named fields into a new type, the way <code>ListNode</code> groups <code>val</code> and <code>next</code>. An <code>impl</code> block attaches functions to that type. A function in an <code>impl</code> whose first parameter is <code>&amp;self</code> or <code>&amp;mut self</code> is a <em>method</em>: it runs on one particular value and you call it with a dot.</p>
+
+<p>Start with a tiny random number generator, so picking a random node needs no library at all:</p>
+
+<pre class="code"><code><span class="hk">struct</span> <span class="ht">Rng</span> {
+    state: u64,
+}
+
+<span class="hk">impl</span> <span class="ht">Rng</span> {
+    <span class="hk">fn</span> <span class="hf">next</span>(&amp;<span class="hk">mut</span> <span class="hk">self</span>) -&gt; u64 {
+        <span class="hk">let</span> <span class="hk">mut</span> x = <span class="hk">self</span>.state;
+        x ^= x &lt;&lt; <span class="hn">13</span>;
+        x ^= x &gt;&gt; <span class="hn">7</span>;
+        x ^= x &lt;&lt; <span class="hn">17</span>;
+        <span class="hk">self</span>.state = x;
+        x
+    }
+}</code></pre>
+
+<p>The generator remembers one number, <code>state</code>. Each call scrambles it with three shifts and three exclusive-ors (<code>^</code>), stores the result, and returns it. The numbers follow a long fixed sequence that looks random enough to pick a position. It is not fit for anything secret. The method takes <code>&amp;mut self</code> because it changes <code>state</code>.</p>
+
+<p>Now a struct that keeps a list and picks a random value from it:</p>
+
+<pre class="code"><code><span class="hk">struct</span> <span class="ht">Picker</span> {
+    head: <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt;,
+    rng: <span class="ht">Rng</span>,
+}
+
+<span class="hk">impl</span> <span class="ht">Picker</span> {
+    <span class="hk">fn</span> <span class="hf">new</span>(head: <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt;) -&gt; <span class="hk">Self</span> {
+        <span class="ht">Picker</span> {
+            head,
+            rng: <span class="ht">Rng</span> {
+                state: <span class="hn">88172645463325252</span>,
+            },
+        }
+    }
+
+    <span class="hk">fn</span> <span class="hf">pick</span>(&amp;<span class="hk">mut</span> <span class="hk">self</span>) -&gt; i32 {
+        <span class="hk">let</span> n = <span class="hf">length</span>(&amp;<span class="hk">self</span>.head) <span class="hk">as</span> u64;
+        <span class="hk">let</span> <span class="hk">mut</span> steps = <span class="hk">self</span>.rng.<span class="hf">next</span>() % n;
+        <span class="hk">let</span> <span class="hk">mut</span> cur = &amp;<span class="hk">self</span>.head;
+        <span class="hk">while</span> <span class="hk">let</span> <span class="hv">Some</span>(node) = cur {
+            <span class="hk">if</span> steps == <span class="hn">0</span> {
+                <span class="hk">return</span> node.val;
+            }
+            steps -= <span class="hn">1</span>;
+            cur = &amp;node.next;
+        }
+        <span class="hn">0</span> <span class="hc">// only reached if the list is empty</span>
+    }
+}</code></pre>
+
+<p><code>fn new(...) -&gt; Self</code> is the usual name for a function that builds a value; <code>Self</code> means "this type", here <code>Picker</code>. <code>pick</code> counts the nodes, rolls a number from 0 to n minus 1 with <code>% n</code> (the remainder after dividing by n), and walks that many steps.</p>
+
+<p>Two walks per pick. Here's a way to do it in one, without knowing the length in advance:</p>
+
+<pre class="code"><code><span class="hk">impl</span> <span class="ht">Picker</span> {
+    <span class="hk">fn</span> <span class="hf">pick_one_pass</span>(&amp;<span class="hk">mut</span> <span class="hk">self</span>) -&gt; i32 {
+        <span class="hk">let</span> <span class="hk">mut</span> chosen = <span class="hn">0</span>;
+        <span class="hk">let</span> <span class="hk">mut</span> seen: u64 = <span class="hn">0</span>;
+        <span class="hk">let</span> <span class="hk">mut</span> cur = &amp;<span class="hk">self</span>.head;
+        <span class="hk">while</span> <span class="hk">let</span> <span class="hv">Some</span>(node) = cur {
+            seen += <span class="hn">1</span>;
+            <span class="hk">if</span> <span class="hk">self</span>.rng.<span class="hf">next</span>() % seen == <span class="hn">0</span> {
+                chosen = node.val; <span class="hc">// node number `seen` wins with chance 1/seen</span>
+            }
+            cur = &amp;node.next;
+        }
+        chosen
+    }
+}</code></pre>
+
+<p>Walk once and keep a current choice. Node number k replaces the choice with chance 1 in k. Check it on three nodes. Node 3 is chosen with chance 1/3. Node 2 gets picked at its turn with chance 1/2 and survives node 3 with chance 2/3, so 1/2 × 2/3 = 1/3. Node 1 is picked for sure, then survives both: 1/2 × 2/3 = 1/3. Fair all round.</p>
+
+<p><span class="tag fact">fact</span>30,000 picks from a list of 1, 2, 3 with each method: <code>pick</code> chose them 10,019, 9,930 and 10,051 times; <code>pick_one_pass</code> chose them 10,025, 10,021 and 9,954 times.</p>
+
+<div class="nope-note">
+<p class="nope-head">Why the generator lives in its own struct</p>
+<pre class="code nope-code"><code><span class="hk">let</span> <span class="hk">mut</span> cur = &amp;<span class="hk">self</span>.head; <span class="hc">// borrows part of self</span>
+<span class="hk">while</span> <span class="hk">let</span> <span class="hv">Some</span>(node) = cur {
+    seen += <span class="hn">1</span>;
+    <span class="hk">if</span> <span class="hk">self</span>.<span class="hf">next_random</span>() % seen == <span class="hn">0</span> {
+        <span class="hc">// a method borrows ALL of self</span>
+        chosen = node.val;
+    }
+    cur = &amp;node.next;
+}</code></pre>
+<p>With the generator as a method on <code>Picker</code> itself, the call needs a changeable loan of <em>all</em> of <code>self</code>, while <code>cur</code> is still looking at <code>self.head</code>. Putting the generator in its own field, <code>self.rng</code>, lets Rust see that the loan on <code>self.rng</code> and the look at <code>self.head</code> touch different fields, and both are allowed.</p>
+</div>
+
+<p><span class="tag judgment">judgment</span>Three ways to pick, three prices. Count-and-walk: two walks per pick, no memory. One pass: one walk per pick, no memory. Copy the values into a <code>Vec</code> once inside <code>new</code>: memory for every value, then each pick is a single index. If you'll pick many times from a list that never changes, the <code>Vec</code> wins by a mile.</p>
+
+<h3>Taking from both ends</h3>
+
+<p>The next containers come from the standard library. A <code>use</code> line at the top of the file brings their names into scope:</p>
+
+<pre class="code"><code><span class="hk">use</span> std::cmp::<span class="ht">Ordering</span>;
+<span class="hk">use</span> std::collections::{<span class="ht">BinaryHeap</span>, <span class="ht">HashSet</span>, <span class="ht">VecDeque</span>};</code></pre>
+
+<p>A <code>VecDeque</code> is a conveyor you can load and unload at either end. Detach every node (with <code>take</code>, as always) and load them on:</p>
+
+<pre class="code"><code><span class="hk">fn</span> <span class="hf">detach_all</span>(head: <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt;) -&gt; <span class="ht">VecDeque</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt; {
+    <span class="hk">let</span> <span class="hk">mut</span> nodes = <span class="ht">VecDeque</span>::<span class="hf">new</span>();
+    <span class="hk">let</span> <span class="hk">mut</span> cur = head;
+    <span class="hk">while</span> <span class="hk">let</span> <span class="hv">Some</span>(<span class="hk">mut</span> node) = cur {
+        cur = node.next.<span class="hf">take</span>();
+        nodes.<span class="hf">push_back</span>(node);
+    }
+    nodes
+}</code></pre>
+
+<p>Each element is a <code>Box&lt;ListNode&gt;</code>, one 8-byte key per locker. <code>pop_front()</code> and <code>pop_back()</code> hand you a node from either end, ready to hang on a tail in whatever order the task asks for: front, back, front, back, or anything else. Memory cost: one key per node.</p>
+
+<h3>Remembering what you've seen</h3>
+
+<pre class="code"><code><span class="hk">fn</span> <span class="hf">remove_repeats</span>(head: <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt;) -&gt; <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt; {
+    <span class="hk">let</span> <span class="hk">mut</span> seen = <span class="ht">HashSet</span>::<span class="hf">new</span>();
+    <span class="hk">let</span> <span class="hk">mut</span> dummy = <span class="ht">ListNode</span>::<span class="hf">new</span>(<span class="hn">0</span>);
+    <span class="hk">let</span> <span class="hk">mut</span> tail = &amp;<span class="hk">mut</span> dummy;
+    <span class="hk">let</span> <span class="hk">mut</span> cur = head;
+    <span class="hk">while</span> <span class="hk">let</span> <span class="hv">Some</span>(<span class="hk">mut</span> node) = cur {
+        cur = node.next.<span class="hf">take</span>();
+        <span class="hk">if</span> seen.<span class="hf">insert</span>(node.val) {
+            tail.next = <span class="hv">Some</span>(node);
+            tail = tail.next.<span class="hf">as_mut</span>().<span class="hf">unwrap</span>();
+        }
+    }
+    dummy.next
+}</code></pre>
+
+<p><code>seen.insert(v)</code> adds <code>v</code> to the set and returns <code>true</code> if it wasn't there before, so the first copy of each value is kept and later copies are freed. A <code>HashMap</code> does the same job with something attached to each value: a count, a position, a running total. It's the tool whenever a task asks "have I been here before, and what did I know then?"</p>
+
+<h3>Always the smallest next</h3>
+
+<p>A <code>BinaryHeap</code> is the counter that always hands over the biggest item in the room. To merge many sorted lists you want the smallest instead. That means teaching <code>ListNode</code> to compare backwards.</p>
+
+<p>This is where traits come in. A <em>trait</em> is a promise that a type knows how to do something. A heap only accepts items that promise they can be ordered, the <code>Ord</code> trait. <code>ListNode</code> doesn't make that promise, so you write it:</p>
+
+<pre class="code"><code><span class="hk">impl</span> <span class="ht">Ord</span> <span class="hk">for</span> <span class="ht">ListNode</span> {
+    <span class="hk">fn</span> <span class="hf">cmp</span>(&amp;<span class="hk">self</span>, other: &amp;<span class="hk">Self</span>) -&gt; <span class="ht">Ordering</span> {
+        other.val.<span class="hf">cmp</span>(&amp;<span class="hk">self</span>.val) <span class="hc">// flipped: smaller val counts as "greater"</span>
+    }
+}
+
+<span class="hk">impl</span> <span class="ht">PartialOrd</span> <span class="hk">for</span> <span class="ht">ListNode</span> {
+    <span class="hk">fn</span> <span class="hf">partial_cmp</span>(&amp;<span class="hk">self</span>, other: &amp;<span class="hk">Self</span>) -&gt; <span class="ht">Option</span>&lt;<span class="ht">Ordering</span>&gt; {
+        <span class="hv">Some</span>(<span class="hk">self</span>.<span class="hf">cmp</span>(other))
+    }
+}</code></pre>
+
+<p><code>cmp</code> returns an <code>Ordering</code>: less, equal or greater. Comparing <code>other.val</code> to <code>self.val</code>, instead of the other way round, flips the order, so the heap's "biggest" is the node with the smallest value. <code>PartialOrd</code> is a second, looser promise that <code>Ord</code> requires; the body just reuses <code>cmp</code>. Rust lets you write these because <code>ListNode</code> is defined in your own code. You can't add a standard trait to a type that belongs to someone else's library.</p>
+
+<pre class="code"><code><span class="hk">fn</span> <span class="hf">merge_many</span>(lists: <span class="ht">Vec</span>&lt;<span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt;&gt;) -&gt; <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt; {
+    <span class="hk">let</span> <span class="hk">mut</span> heap = <span class="ht">BinaryHeap</span>::<span class="hf">new</span>();
+    <span class="hk">for</span> list <span class="hk">in</span> lists {
+        <span class="hk">if</span> <span class="hk">let</span> <span class="hv">Some</span>(node) = list {
+            heap.<span class="hf">push</span>(node);
+        }
+    }
+    <span class="hk">let</span> <span class="hk">mut</span> dummy = <span class="ht">ListNode</span>::<span class="hf">new</span>(<span class="hn">0</span>);
+    <span class="hk">let</span> <span class="hk">mut</span> tail = &amp;<span class="hk">mut</span> dummy;
+    <span class="hk">while</span> <span class="hk">let</span> <span class="hv">Some</span>(<span class="hk">mut</span> node) = heap.<span class="hf">pop</span>() {
+        <span class="hk">if</span> <span class="hk">let</span> <span class="hv">Some</span>(next) = node.next.<span class="hf">take</span>() {
+            heap.<span class="hf">push</span>(next);
+        }
+        tail.next = <span class="hv">Some</span>(node);
+        tail = tail.next.<span class="hf">as_mut</span>().<span class="hf">unwrap</span>();
+    }
+    dummy.next
+}</code></pre>
+
+<p>Load each list's front node. Then: take the smallest, put its successor in its place, hang the smallest on the tail. The heap only ever holds one node per list.</p>
+
+<p><span class="tag judgment">judgment</span>There's a quiet inconsistency in that <code>Ord</code>. Two nodes with the same <code>val</code> compare as equal under it, while the derived <code>==</code> compares the whole lists behind them and might say they differ. The heap never notices. If you'd rather not write a trait at all, merge in pairs instead, round after round, with the <code>merge</code> from section 6 or 10:</p>
+
+<pre class="code"><code><span class="hk">fn</span> <span class="hf">merge_many_pairwise</span>(
+    <span class="hk">mut</span> lists: <span class="ht">Vec</span>&lt;<span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt;&gt;,
+) -&gt; <span class="ht">Option</span>&lt;<span class="ht">Box</span>&lt;<span class="ht">ListNode</span>&gt;&gt; {
+    <span class="hk">if</span> lists.<span class="hf">is_empty</span>() {
+        <span class="hk">return</span> <span class="hv">None</span>;
+    }
+    <span class="hk">while</span> lists.<span class="hf">len</span>() &gt; <span class="hn">1</span> {
+        <span class="hk">let</span> <span class="hk">mut</span> next_round = <span class="ht">Vec</span>::<span class="hf">new</span>();
+        <span class="hk">while</span> lists.<span class="hf">len</span>() &gt;= <span class="hn">2</span> {
+            <span class="hk">let</span> a = lists.<span class="hf">pop</span>().<span class="hf">unwrap</span>();
+            <span class="hk">let</span> b = lists.<span class="hf">pop</span>().<span class="hf">unwrap</span>();
+            next_round.<span class="hf">push</span>(<span class="hf">merge</span>(a, b));
+        }
+        <span class="hk">if</span> lists.<span class="hf">len</span>() == <span class="hn">1</span> {
+            next_round.<span class="hf">push</span>(lists.<span class="hf">pop</span>().<span class="hf">unwrap</span>());
+        }
+        lists = next_round;
+    }
+    lists.<span class="hf">pop</span>().<span class="hf">unwrap</span>()
+}</code></pre>
+
+<p>Each round halves the number of lists. With k lists holding N nodes between them, both approaches do work proportional to N × log k. The heap version needs the trait; the pairwise version needs nothing new.</p>
+</section>
+
+<section class="chapter" id="s12">
+<div class="ch-head"><span class="door">12</span><h2>Costs you didn't write</h2></div>
+
+<p>Back to the line above <code>ListNode</code>: <code>#[derive(PartialEq, Eq, Clone, Debug)]</code>. It asks the compiler to write some code for you. That's handy. Read the fine print anyway, because every one of those generated functions walks the entire list.</p>
+
+<pre class="code"><code><span class="hk">let</span> a = <span class="hv">Some</span>(<span class="ht">Box</span>::<span class="hf">new</span>(<span class="ht">ListNode</span> {
+    val: <span class="hn">1</span>,
+    next: <span class="hv">Some</span>(<span class="ht">Box</span>::<span class="hf">new</span>(<span class="ht">ListNode</span>::<span class="hf">new</span>(<span class="hn">2</span>))),
+}));
+<span class="hk">let</span> b = a.<span class="hf">clone</span>(); <span class="hc">// every node copied: 2 new allocations</span>
+<span class="hm">println!</span>(<span class="hs">"{}"</span>, a == b); <span class="hc">// true, after comparing node by node</span>
+<span class="hm">println!</span>(<span class="hs">"{:?}"</span>, a);</code></pre>
+
+<p>Running it prints:</p>
+<pre class="out"><code>true
+Some(ListNode { val: 1, next: Some(ListNode { val: 2, next: None }) })</code></pre>
+<ul>
+<li><strong>Clone</strong> copies every node. <span class="tag fact">fact</span>Cloning a 1000-node list made 1000 allocations.</li>
+<li><strong>PartialEq and Eq</strong> give you <code>==</code>, which compares node by node down both lists. No allocations, but a full walk.</li>
+<li><strong>Debug</strong> lets <code>{:?}</code> print the list, nested as you see above (boxes don't show up in the output). Great for checking your work, painful for long lists.</li>
+</ul>
+<p>The rest of the definition is quieter. <code>pub</code> makes a field visible outside the module it's defined in. <code>#[inline]</code> is a hint to the optimizer. Neither changes anything you write.</p>
+
+<h3>Handing the row back</h3>
+
+<p>One more piece of code you never wrote: the cleanup when a list goes away. It sounds simple. But the desk can't sign off on locker 1 until locker 2 has come back, and locker 2 is waiting on locker 3. Freeing a list is the hallway from section 10 again: one stack frame per node, all waiting.</p>
+
+<p><span class="tag fact">fact</span>Dropping a list the default way overflowed an 8 MiB stack at about 130 thousand nodes in a debug build, and about 260 thousand in an optimized build.</p>
+
+<p>The fix is to free it in a loop, taking each node's key out before the node goes:</p>
+
+<pre class="code"><code><span class="hk">let</span> <span class="hk">mut</span> cur = head;
+<span class="hk">while</span> <span class="hk">let</span> <span class="hv">Some</span>(<span class="hk">mut</span> node) = cur {
+    cur = node.next.<span class="hf">take</span>(); <span class="hc">// node goes with an empty hook: a one-step free</span>
+}</code></pre>
+
+<p><span class="tag fact">fact</span>This freed a 3-million-node list without trouble, in both debug and optimized builds.</p>
+
+<p><span class="tag judgment">judgment</span>With a few thousand nodes you will never notice any of this. It matters for long lists: big test inputs, lists kept around in a long-running program, or anything built in a loop that never stops growing.</p>
+</section>
+
+<section class="chapter" id="s13">
+<div class="ch-head"><span class="door">13</span><h2>When a list meets a tree</h2></div>
+
+<p>Some tasks connect a list with a binary tree. You might build a tree from a list's values, or check whether a list's values appear as a path down a tree. The tree node you'll be given looks like this:</p>
+
+<pre class="code"><code><span class="hk">use</span> std::cell::<span class="ht">RefCell</span>;
+<span class="hk">use</span> std::rc::<span class="ht">Rc</span>;</code></pre>
+
+<pre class="code"><code><span class="ha">#[derive(Debug, PartialEq, Eq)]</span>
+<span class="hk">pub</span> <span class="hk">struct</span> <span class="ht">TreeNode</span> {
+    <span class="hk">pub</span> val: i32,
+    <span class="hk">pub</span> left: <span class="ht">Option</span>&lt;<span class="ht">Rc</span>&lt;<span class="ht">RefCell</span>&lt;<span class="ht">TreeNode</span>&gt;&gt;&gt;,
+    <span class="hk">pub</span> right: <span class="ht">Option</span>&lt;<span class="ht">Rc</span>&lt;<span class="ht">RefCell</span>&lt;<span class="ht">TreeNode</span>&gt;&gt;&gt;,
+}</code></pre>
+
+<p>Two new wrappers, <code>Rc</code> and <code>RefCell</code>. Their real story is the next topic, so here's the one-line version of each. <code>Rc</code> is a key that <em>can</em> be copied: a locker with several owners, freed when the last one lets go. <code>RefCell</code> moves the "many lookers or one changer" check from compile time to while the program runs.</p>
+
+<p>For now, two recipes are enough.</p>
+
+<p><strong>Building.</strong> Wrap three times: the node in <code>RefCell</code>, that in <code>Rc</code>, that in <code>Some</code>.</p>
+
+<pre class="code"><code><span class="hk">fn</span> <span class="hf">tree</span>(
+    val: i32,
+    left: <span class="ht">Option</span>&lt;<span class="ht">Rc</span>&lt;<span class="ht">RefCell</span>&lt;<span class="ht">TreeNode</span>&gt;&gt;&gt;,
+    right: <span class="ht">Option</span>&lt;<span class="ht">Rc</span>&lt;<span class="ht">RefCell</span>&lt;<span class="ht">TreeNode</span>&gt;&gt;&gt;,
+) -&gt; <span class="ht">Option</span>&lt;<span class="ht">Rc</span>&lt;<span class="ht">RefCell</span>&lt;<span class="ht">TreeNode</span>&gt;&gt;&gt; {
+    <span class="hv">Some</span>(<span class="ht">Rc</span>::<span class="hf">new</span>(<span class="ht">RefCell</span>::<span class="hf">new</span>(<span class="ht">TreeNode</span> { val, left, right })))
+}</code></pre>
+
+<p><strong>Reading.</strong> Call <code>.borrow()</code> to open a node for looking. After that, <code>t.val</code> and <code>&amp;t.left</code> work just like looking at a <code>ListNode</code>.</p>
+
+<pre class="code"><code><span class="hk">fn</span> <span class="hf">tree_sum</span>(root: &amp;<span class="ht">Option</span>&lt;<span class="ht">Rc</span>&lt;<span class="ht">RefCell</span>&lt;<span class="ht">TreeNode</span>&gt;&gt;&gt;) -&gt; i32 {
+    <span class="hk">match</span> root {
+        <span class="hv">None</span> =&gt; <span class="hn">0</span>,
+        <span class="hv">Some</span>(node) =&gt; {
+            <span class="hk">let</span> t = node.<span class="hf">borrow</span>();
+            t.val + <span class="hf">tree_sum</span>(&amp;t.left) + <span class="hf">tree_sum</span>(&amp;t.right)
+        }
+    }
+}</code></pre>
+
+<pre class="code"><code><span class="hk">let</span> root = <span class="hf">tree</span>(<span class="hn">2</span>, <span class="hf">tree</span>(<span class="hn">1</span>, <span class="hv">None</span>, <span class="hv">None</span>), <span class="hf">tree</span>(<span class="hn">3</span>, <span class="hv">None</span>, <span class="hv">None</span>));
+<span class="hm">println!</span>(<span class="hs">"{}"</span>, <span class="hf">tree_sum</span>(&amp;root)); <span class="hc">// 6</span></code></pre>
+
+<figure>
+<svg viewBox="0 0 690 190" role="img" aria-labelledby="d13t">
+<title id="d13t">A list 1, 2, 3 on the left; on the right a tree with 2 at the root, 1 on the left and 3 on the right. Each tree node is wrapped twice.</title>
+<defs><marker id="ah13" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-arrowhead"/></marker></defs>
+<rect x="20" y="78" width="40" height="34" rx="4" class="d-locker"/><text x="40" y="100" class="d-val" font-size="15" text-anchor="middle">1</text>
+<path d="M60 95 L76 95" class="d-arrow" marker-end="url(#ah13)"/>
+<rect x="80" y="78" width="40" height="34" rx="4" class="d-locker"/><text x="100" y="100" class="d-val" font-size="15" text-anchor="middle">2</text>
+<path d="M120 95 L136 95" class="d-arrow" marker-end="url(#ah13)"/>
+<rect x="140" y="78" width="40" height="34" rx="4" class="d-locker"/><text x="160" y="100" class="d-val" font-size="15" text-anchor="middle">3</text>
+<text x="20" y="140" class="d-text" font-size="12">list: one key per locker</text>
+<path d="M210 95 L300 95" class="d-arrow" stroke-dasharray="5 4" marker-end="url(#ah13)"/>
+<text x="255" y="84" class="d-text" font-size="12" text-anchor="middle">values</text>
+<rect x="420" y="18" width="56" height="46" rx="8" class="d-box"/><rect x="426" y="24" width="44" height="34" rx="4" class="d-locker"/><text x="448" y="46" class="d-val" font-size="15" text-anchor="middle">2</text>
+<rect x="340" y="118" width="56" height="46" rx="8" class="d-box"/><rect x="346" y="124" width="44" height="34" rx="4" class="d-locker"/><text x="368" y="146" class="d-val" font-size="15" text-anchor="middle">1</text>
+<rect x="500" y="118" width="56" height="46" rx="8" class="d-box"/><rect x="506" y="124" width="44" height="34" rx="4" class="d-locker"/><text x="528" y="146" class="d-val" font-size="15" text-anchor="middle">3</text>
+<path d="M432 64 L384 114" class="d-arrow" marker-end="url(#ah13)"/>
+<path d="M464 64 L512 114" class="d-arrow" marker-end="url(#ah13)"/>
+<text x="580" y="40" class="d-text" font-size="12">outer box: Rc</text>
+<text x="580" y="58" class="d-text" font-size="12">inner box: RefCell</text>
+</svg>
+<figcaption>Tree building usually wants random access to the values (the middle one goes on top), which is the clipboard trick from section 2.</figcaption>
+</figure>
+
+<p>Two list tricks carry straight over. Copying a list's values into a <code>Vec</code> (section 2) gives you the random access that tree building usually wants, like grabbing the middle value for the root and then the middle of each half. And when a list has to be matched against a tree, walk the list with a look (<code>&amp;node.next</code>) and the tree with <code>.borrow()</code>, step by step, side by side.</p>
+</section>
+
+<section class="chapter" id="s14">
+<div class="ch-head"><span class="door">14</span><h2>Past one owner</h2></div>
+
+<p>Everything so far obeys the one-key rule. Some shapes can't be built under it at all:</p>
+<ul>
+<li>a row whose last locker holds the key to one in the middle (a cycle),</li>
+<li>two rows that share the same tail,</li>
+<li>lockers that also hold the key to the one before (a doubly linked list),</li>
+<li>a key to one locker in the middle of a row, handed to you without the rest of the row.</li>
+</ul>
+<p>Every one of them needs a locker with two keys. <code>Box</code> can't say that. It's not a missing feature, it's the rule doing its job.</p>
+
+<p>There is a way around the rule, and it's the equivalent of picking the lock:</p>
+
+<pre class="code"><code><span class="hk">let</span> node: &amp;<span class="ht">ListNode</span> = list.<span class="hf">as_ref</span>().<span class="hf">unwrap</span>();
+<span class="hk">let</span> p: *<span class="hk">const</span> <span class="ht">ListNode</span> = node; <span class="hc">// an address with no rules attached</span>
+<span class="hk">let</span> v = <span class="hk">unsafe</span> { (*p).val }; <span class="hc">// you promise p still points at a live node</span></code></pre>
+
+<p><code>*const ListNode</code> is a raw pointer, an address with no rules attached. Copy it, keep it, have ten of them pointing at the same node. Reading through one needs an <code>unsafe</code> block, which is you telling the compiler: I've checked this myself. If the node has been freed or moved by the time you read, the program reads garbage or crashes, and nothing warns you first.</p>
+
+<p><span class="tag judgment">judgment</span>Real Rust code does use raw pointers, inside small, carefully reviewed building blocks. For list work like everything on this page, there's always a safe route through sections 1 to 13, and it's the one to take.</p>
+
+<p>The safe way to give a locker several owners is <code>Rc</code>, the copyable key from section 13, together with <code>RefCell</code> for changing what's inside. That's where graphs live, and it's where this goes next.</p>
+</section>
+
+<section class="chapter" id="s15">
+<div class="ch-head"><span class="door">15</span><h2>The ledger</h2></div>
+
+<p>Every move on this page, with what it costs. "n" is the number of nodes.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Move</th><th>Extra memory</th><th>New allocations</th><th>Walks</th><th>Good for</th><th>Watch out</th></tr></thead>
+<tbody>
+<tr><td>Look (§2)</td><td>none</td><td>0</td><td>1</td><td>answers without changing anything</td><td>can't keep or move nodes</td></tr>
+<tr><td>Consume (§3)</td><td>none</td><td>0</td><td>1</td><td>when the list isn't needed afterwards; getting nodes in hand</td><td>the list is gone</td></tr>
+<tr><td>Prepend, reverse (§4)</td><td>none</td><td>0</td><td>1</td><td>reversing; working from the right, then restoring order</td><td>builds backwards</td></tr>
+<tr><td>Dummy and tail, new nodes (§5)</td><td>none (stack dummy)</td><td>n</td><td>1</td><td>output values that differ from the input</td><td>one allocation per node</td></tr>
+<tr><td>Dummy and tail, re-hung nodes (§6)</td><td>none</td><td>0</td><td>1</td><td>filter, split into piles, merge, interleave</td><td><code>take()</code> before handing a node over</td></tr>
+<tr><td>Hook in hand (§7)</td><td>none</td><td>0, or 1 per insert</td><td>1</td><td>delete or insert in place, first node included</td><td>check, then act</td></tr>
+<tr><td>Cut and couple (§8)</td><td>none</td><td>0</td><td>to the cut point</td><td>rotations, pieces, working on a middle stretch</td><td>finding the spot costs a walk</td></tr>
+<tr><td>Count first (§9)</td><td>none</td><td>0</td><td>2</td><td>positions from the end, middles</td><td>two passes</td></tr>
+<tr><td>Copy to a <code>Vec</code> (§2, §9)</td><td>n numbers</td><td>a few, as the <code>Vec</code> grows</td><td>1, plus work</td><td>random access, sorting, two indices at once</td><td>changes values, not nodes</td></tr>
+<tr><td>Clone (§9, §12)</td><td>a full copy</td><td>n</td><td>1</td><td>an independent second list</td><td>easy to do by accident</td></tr>
+<tr><td>Recursion (§10)</td><td>a stack frame per level</td><td>0</td><td>1</td><td>short code that reads like the definition</td><td>tens of thousands of levels can overflow the stack</td></tr>
+<tr><td>Deque, set, heap (§11)</td><td>one key or value per node</td><td>a few, as the container grows</td><td>1</td><td>both ends, seen-before checks, many-way merge</td><td>heap needs <code>Ord</code></td></tr>
+<tr><td>Raw pointers (§14)</td><td>none</td><td>0</td><td>1</td><td>escaping the one-key rule</td><td>no checks at all</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>And when a new task shows up, the first question is which grip it needs.</p>
+<ul>
+<li>Only an answer? Look (section 2). If the answer needs jumping around, copy to a <code>Vec</code>.</li>
+<li>The same nodes in a new arrangement? Own them and re-hang them (sections 3, 4, 6, 7, 8).</li>
+<li>New values? Build new lockers (sections 4 and 5).</li>
+</ul>
+
+<p class="end-note">Every code block on this page was compiled and run on stable Rust, edition 2024, and every "won't compile" example was checked to fail. Sizes are for a 64-bit machine. Timings and stack limits come from one 2-core x86-64 Linux machine with the default system allocator and an 8 MiB main-thread stack; expect your exact numbers to differ.</p>
+</section>
+
+</main>
+</div>
+<script>
+(function () {
+  var root = document.documentElement;
+  var btn = document.getElementById("themeBtn");
+  function isDark() {
+    var t = root.getAttribute("data-theme");
+    if (t) return t === "dark";
+    return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  }
+  function label() { btn.textContent = isDark() ? "Light" : "Dark"; }
+  try {
+    var saved = localStorage.getItem("ll-theme");
+    if (saved === "light" || saved === "dark") root.setAttribute("data-theme", saved);
+  } catch (e) {}
+  label();
+  btn.addEventListener("click", function () {
+    var next = isDark() ? "light" : "dark";
+    root.setAttribute("data-theme", next);
+    try { localStorage.setItem("ll-theme", next); } catch (e) {}
+    label();
+  });
+
+  // contents rail: open the door of the section being read
+  var links = Array.prototype.slice.call(document.querySelectorAll(".rail a"));
+  var byId = {};
+  links.forEach(function (a) { byId[a.getAttribute("href").slice(1)] = a; });
+  if ("IntersectionObserver" in window) {
+    var obs = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (en.isIntersecting && byId[en.target.id]) {
+          links.forEach(function (a) { a.classList.remove("active"); });
+          byId[en.target.id].classList.add("active");
+        }
+      });
+    }, { rootMargin: "-25% 0px -65% 0px" });
+    document.querySelectorAll("section.chapter").forEach(function (s) { obs.observe(s); });
+  }
+
+  // ---------- steppers ----------
+  function pegHTML(i, v) {
+    var mark = v.markPeg === i;
+    var tag = mark && v.pegTag ? '<span class="peg-tag">' + v.pegTag + "</span>" : "";
+    return '<span class="peg' + (mark ? " mark" : "") + '">' + tag + "</span>";
+  }
+  function endHTML(n, v) {
+    var mark = v.markPeg === n;
+    var tag = mark && v.pegTag ? '<span class="peg-tag">' + v.pegTag + "</span>" : "";
+    return '<span class="peg empty' + (mark ? " mark" : "") + '"><span>None</span>' + tag + "</span>";
+  }
+  function boxHTML(i, v) {
+    var cls = "lk";
+    if (v.dummyFirst && i === 0) cls += " dummy";
+    if (v.fresh === i) cls += " fresh";
+    if (v.freed) cls += " freed";
+    if (v.markBox === i) cls += " mark";
+    var tag = v.markBox === i && v.boxTag ? '<span class="lk-tag">' + v.boxTag + "</span>" : "";
+    return '<span class="' + cls + '">' + v.vals[i] + tag + "</span>";
+  }
+  function rowHTML(v) {
+    var body;
+    if (v.scalar !== undefined) body = '<span class="st-scalar">' + v.scalar + "</span>";
+    else if (v.moved) body = '<span class="st-moved">' + v.moved + "</span>";
+    else {
+      body = '<span class="st-chain">';
+      var n = v.vals.length;
+      for (var i = 0; i < n; i++) {
+        if (!(v.freed && i === 0)) body += pegHTML(i, v);
+        body += boxHTML(i, v);
+      }
+      if (v.hole) body += '<span class="peg hole"><span>hole</span></span>';
+      else if (!v.freed) body += endHTML(n, v);
+      body += "</span>";
+    }
+    return '<div class="st-row"><span class="st-name">' + v.name + "</span>" + body + "</div>";
+  }
+
+  function framesReverse(input) {
+    var F = [];
+    function f(line, vars, cap) { F.push({ line: line, vars: vars, cap: cap }); }
+    var cur = input.slice(), prev = [];
+    f("fn reverse", [{ name: "head", vals: cur.slice() }], "The function receives the whole row. Whoever holds <code>head</code> owns every locker.");
+    f("let mut prev", [{ name: "head", vals: cur.slice() }, { name: "prev", vals: [] }], "<code>prev</code> starts as an empty hook. It will become the new pile.");
+    f("let mut cur", [{ name: "prev", vals: [] }, { name: "head", moved: "gave its key to cur" }, { name: "cur", vals: cur.slice() }], "<code>head</code> hands its key to <code>cur</code>. Nothing was copied, one 8-byte address changed hands.");
+    var round = 0;
+    while (cur.length) {
+      var v = cur[0], rest = cur.slice(1);
+      round++;
+      var first = round === 1;
+      f("while let", [{ name: "prev", vals: prev.slice() }, { name: "cur", moved: "emptied into node" }, { name: "node", vals: [v].concat(rest), markBox: 0 }],
+        first ? "Lift the top card. <code>node</code> owns locker " + v + ", and that locker still holds the key to everything behind it." : "Lift the next card, " + v + ".");
+      f("cur = node.next", [{ name: "prev", vals: prev.slice() }, { name: "cur", vals: rest.slice() }, { name: "node", vals: [v], hole: true, markBox: 0 }],
+        first ? "Pocket the rest in <code>cur</code>. For one line, <code>node</code> has a hole where its key used to be." : "Rest goes into <code>cur</code>. Hole in <code>node</code>.");
+      f("node.next = prev", [{ name: "prev", vals: prev.slice() }, { name: "cur", vals: rest.slice() }, { name: "node", vals: [v].concat(prev), markBox: 0 }],
+        first ? "Fill the hole with the pile. The pile is empty so far, so the hook gets <code>None</code>." : "Fill the hole with the pile.");
+      prev = [v].concat(prev);
+      cur = rest;
+      f("prev = Some", [{ name: "prev", vals: prev.slice(), markBox: 0 }, { name: "cur", vals: cur.slice() }],
+        first ? "Drop the card on the pile. <code>prev</code> now owns it." : "On the pile it goes.");
+    }
+    f("while let", [{ name: "prev", vals: prev.slice() }, { name: "cur", vals: [] }], "<code>cur</code> holds nothing, so the pattern <code>Some(mut node)</code> fails and the loop stops.");
+    f("=prev", [{ name: "prev", vals: prev.slice() }], "Hand back the pile. Same lockers, same memory, new order. Zero allocations.");
+    return F;
+  }
+
+  function framesSquares(n) {
+    var F = [];
+    function f(line, vars, cap) { F.push({ line: line, vars: vars, cap: cap }); }
+    var built = [], t = 0, i;
+    function dummy(extra) {
+      var d = { name: "dummy", vals: [0].concat(built), dummyFirst: true, markBox: t, boxTag: "tail" };
+      for (var k in extra) d[k] = extra[k];
+      return d;
+    }
+    f("fn squares", [{ name: "n", scalar: n }], "Build squares 1, 4, 9 in order.");
+    f("let mut dummy", [{ name: "dummy", vals: [0], dummyFirst: true }], "A cardboard locker zero. It sits on the stack, so making it costs no allocation.");
+    f("let mut tail", [dummy({})], "<code>tail</code> is a loan with permission to change things. Think of it as a thumb on the last locker.");
+    i = 1;
+    f("let mut i", [dummy({}), { name: "i", scalar: i }], "Counter starts at 1.");
+    while (i <= n) {
+      var firstLap = i === 1;
+      f("while i", [dummy({}), { name: "i", scalar: i }], firstLap ? "Is <code>i</code> at most <code>n</code>? Yes, keep going." : "Still at most " + n + ".");
+      built.push(i * i);
+      f("tail.next = Some", [dummy({ fresh: built.length }), { name: "i", scalar: i }],
+        firstLap ? "One new locker holding " + i * i + ". That is one trip to the allocator. It goes on the hook of the locker under your thumb." : "New locker " + i * i + ", one more allocation.");
+      t = built.length;
+      f("tail = tail", [dummy({}), { name: "i", scalar: i }],
+        firstLap ? "Slide the thumb onto the new locker. You never walk the row from the start again." : "Thumb slides forward.");
+      i++;
+      f("i += 1", [dummy({}), { name: "i", scalar: i }], "Counter up.");
+    }
+    f("while i", [dummy({}), { name: "i", scalar: i }], i + " is bigger than " + n + ". Loop over.");
+    f("=dummy.next", [dummy({}), { name: "result", vals: built.slice() }], "Return <code>dummy.next</code>: everything after the cardboard. The cardboard locker is thrown away when the function ends.");
+    return F;
+  }
+
+  function framesHook(input) {
+    var F = [];
+    function f(line, vars, cap) { F.push({ line: line, vars: vars, cap: cap }); }
+    var list = input.slice(), h = 0, i;
+    function head(extra) {
+      var d = { name: "head", vals: list.slice(), markPeg: h, pegTag: "hook" };
+      for (var k in extra) d[k] = extra[k];
+      return d;
+    }
+    f("fn remove_negatives", [{ name: "head", vals: list.slice() }], "Remove every negative value, right where it sits.");
+    f("let mut hook", [head({})], "<code>hook</code> holds a hook, not a locker. Right now it holds <code>head</code> itself, the hook the first locker hangs on.");
+    var seenFirst = false, deletedOnce = false;
+    while (h < list.length) {
+      f("while hook", [head({})], !seenFirst ? "Is anything hanging on this hook? Yes." : "Something on this hook.");
+      var v = list[h];
+      if (v < 0) {
+        f("if hook", [head({})], "Peek at the value without taking anything: " + v + ". Negative.");
+        var gone = list.splice(h, 1);
+        f("*hook =", [head({}), { name: "freed", vals: gone, freed: true }],
+          !deletedOnce ? "Swap what hangs on the hook for that locker's own next. The removed locker has no owner left, so it is freed. The hook does not move: whatever now hangs here hasn't been checked." : "Swap and free. Hook stays.");
+        deletedOnce = true;
+      } else {
+        f("if hook", [head({})], "Peek at the value: " + v + ". Keep it.");
+        h++;
+        f("hook = &mut hook", [head({})], !seenFirst ? "Move to the hook inside this locker." : "Next hook.");
+      }
+      seenFirst = true;
+    }
+    f("while hook", [head({})], "Nothing on this hook. The loop is done.");
+    f("=head", [{ name: "head", vals: list.slice() }], "Return <code>head</code>. The first locker could have been removed the same way as any other, no special case.");
+    return F;
+  }
+
+  var MAKERS = { reverse: framesReverse, squares: framesSquares, hook: framesHook };
+
+  document.querySelectorAll(".stepper").forEach(function (el) {
+    var pre = el.querySelector("pre");
+    var code = pre.querySelector("code");
+    var lines = code.innerHTML.split("\n");
+    code.innerHTML = lines.map(function (l, i) { return '<span class="st-line" data-l="' + i + '">' + (l || " ") + "</span>"; }).join("");
+    pre.classList.add("st-code");
+    var input = (el.getAttribute("data-input") || "").split(",").filter(function (x) { return x !== ""; }).map(Number);
+    var algo = el.getAttribute("data-algo");
+    var frames = MAKERS[algo](algo === "squares" ? input[0] : input);
+    var top = document.createElement("div"); top.className = "st-top";
+    var stage = document.createElement("div"); stage.className = "st-stage";
+    el.insertBefore(top, pre);
+    top.appendChild(pre);
+    top.appendChild(stage);
+    var cap = document.createElement("div"); cap.className = "st-caption"; cap.setAttribute("aria-live", "polite");
+    var ctr = document.createElement("div"); ctr.className = "st-controls";
+    ctr.innerHTML = '<button type="button" data-a="back">Back</button><button type="button" class="primary" data-a="step">Step</button><button type="button" data-a="reset">Start over</button><span class="st-count"></span>';
+    el.appendChild(cap); el.appendChild(ctr);
+    var count = ctr.querySelector(".st-count");
+    var back = ctr.querySelector('[data-a="back"]'), step = ctr.querySelector('[data-a="step"]');
+    var k = 0;
+    var texts = Array.prototype.map.call(code.querySelectorAll(".st-line"), function (s) { return s.textContent.trim(); });
+    function lineFor(key) {
+      for (var j = 0; j < texts.length; j++) {
+        if (key.charAt(0) === "=" ? texts[j] === key.slice(1) : texts[j].indexOf(key) !== -1) return j;
+      }
+      return -1;
+    }
+    function draw() {
+      var fr = frames[k];
+      var target = lineFor(fr.line);
+      code.querySelectorAll(".st-line").forEach(function (s) { s.classList.toggle("on", Number(s.getAttribute("data-l")) === target); });
+      stage.innerHTML = fr.vars.map(rowHTML).join("");
+      cap.innerHTML = fr.cap;
+      count.textContent = (k + 1) + " of " + frames.length;
+      back.disabled = k === 0;
+      step.disabled = k === frames.length - 1;
+    }
+    ctr.addEventListener("click", function (e) {
+      var a = e.target.getAttribute("data-a");
+      if (a === "back" && k > 0) k--;
+      if (a === "step" && k < frames.length - 1) k++;
+      if (a === "reset") k = 0;
+      draw();
+    });
+    draw();
+  });
+})();
+</script>
+</body>
+</html>
